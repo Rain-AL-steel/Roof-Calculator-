@@ -1,0 +1,9 @@
+{
+  "name": "resin-tile-order-tool",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/dev-server.cjs"
+  }
+}
