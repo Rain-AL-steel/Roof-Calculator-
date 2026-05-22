@@ -66,9 +66,14 @@
     <symbol id="icon-bolt" viewBox="0 0 24 24">
       <path d="M13 3 6 13h5l-1 8 8-12h-5l1-6Z" />
     </symbol>
+    <symbol id="icon-gear" viewBox="0 0 24 24">
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 1 1-2.83 2.83l-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6V20a2 2 0 1 1-4 0v-.06a1.7 1.7 0 0 0-1-.54 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 1 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1H4a2 2 0 1 1 0-4h.06a1.7 1.7 0 0 0 .54-1 1.7 1.7 0 0 0-.34-1.88l-.04-.04A2 2 0 1 1 7.05 4.25l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6V4a2 2 0 1 1 4 0v.06a1.7 1.7 0 0 0 1 .54 1.7 1.7 0 0 0 1.88-.34l.04-.04a2 2 0 1 1 2.83 2.83l-.04.04A1.7 1.7 0 0 0 19.4 9c.23.35.43.67.6 1H20a2 2 0 1 1 0 4h-.06c-.14.33-.32.66-.54 1Z" />
+    </symbol>
   </svg>
   <a class="skip-link" href="#content">跳到内容</a>
   <div class="app-shell">
+    <section id="shippingView" class="shipping-view">
     <header class="app-header">
       <div class="title-row">
         <div class="title-block">
@@ -76,22 +81,20 @@
           <p>主瓦、配件、钢铁材料和特殊瓦统一核算</p>
         </div>
         <div class="quick-facts" aria-label="固定参数">
-          <span class="fact">宽度 1.05 m</span>
-          <span class="fact">默认节长 0.219 m</span>
+          <span class="fact" id="fixedWidthFact">宽度 — m</span>
+          <span class="fact" id="defaultSegmentFact">默认节长 — m</span>
+          <button type="button" class="btn btn-neutral" id="adminToggle"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg><span>系统管理</span></button>
         </div>
       </div>
 
       <div class="settings-grid">
         <div class="field">
           <label for="globalSegmentInput">节长（米）</label>
-          <select id="globalSegmentInput">
-            <option value="0.218">0.218</option>
-            <option value="0.219" selected>0.219</option>
-          </select>
+          <select id="globalSegmentInput"></select>
         </div>
         <div class="field">
           <label>宽度（米）</label>
-          <div class="readonly-value" aria-readonly="true">1.05</div>
+          <div class="readonly-value" id="fixedWidthDisplay" aria-readonly="true">—</div>
         </div>
         <div class="field">
           <label for="unitPrice">主瓦单价（元/㎡）</label>
@@ -104,11 +107,7 @@
         <div class="field">
           <label for="tileColor">颜色</label>
           <input id="tileColor" type="text" list="tileColorOptions" autocomplete="off" />
-          <datalist id="tileColorOptions">
-            <option value="枣红色"></option>
-            <option value="砖红色"></option>
-            <option value="灰色"></option>
-          </datalist>
+          <datalist id="tileColorOptions"></datalist>
         </div>
         <div class="field">
           <label for="logoUpload">报表 Logo</label>
@@ -119,21 +118,7 @@
         </div>
       </div>
 
-      <datalist id="unitOptions">
-        <option value="片"></option>
-        <option value="米"></option>
-        <option value="套"></option>
-        <option value="条"></option>
-        <option value="板"></option>
-        <option value="块"></option>
-        <option value="包"></option>
-        <option value="盒"></option>
-        <option value="支"></option>
-        <option value="件"></option>
-        <option value="个"></option>
-        <option value="平方"></option>
-        <option value="卷"></option>
-      </datalist>
+      <datalist id="unitOptions"></datalist>
     </header>
 
     <div class="actions-row">
@@ -193,41 +178,22 @@
           <div class="section-head">
             <div>
               <h2>钢铁材料</h2>
-              <p class="subtext">方管、膨胀螺丝和零散钢材独立核算</p>
+              <p class="subtext">方管、螺丝和零散钢材独立核算</p>
             </div>
           </div>
 
           <div class="steel-config">
             <div class="field">
-              <label for="steelTubeSpec">镀锌方管规格</label>
-              <select id="steelTubeSpec">
-                <option value="100×100">100×100</option>
-                <option value="80×80">80×80</option>
-                <option value="60×120">60×120</option>
-                <option value="50×100">50×100</option>
-                <option value="40×80">40×80</option>
-                <option value="40×60">40×60</option>
-                <option value="30×30">30×30</option>
-              </select>
+              <label for="steelTubeSpec">方管规格</label>
+              <select id="steelTubeSpec"></select>
             </div>
             <div class="field">
               <label for="steelTubeThickness">厚度（mm）</label>
-              <select id="steelTubeThickness">
-                <option value="1.5">1.5</option>
-                <option value="1.6">1.6</option>
-                <option value="1.7">1.7</option>
-                <option value="1.8">1.8</option>
-                <option value="2.0">2.0</option>
-                <option value="2.2">2.2</option>
-                <option value="2.5">2.5</option>
-              </select>
+              <select id="steelTubeThickness"></select>
             </div>
             <div class="field">
-              <label for="steelBoltSpec">膨胀螺丝规格</label>
-              <select id="steelBoltSpec">
-                <option value="12×80">12×80</option>
-                <option value="10×80">10×80</option>
-              </select>
+              <label for="steelBoltSpec">螺丝规格</label>
+              <select id="steelBoltSpec"></select>
             </div>
           </div>
 
@@ -239,8 +205,8 @@
           </div>
 
           <div class="toolbar">
-            <button type="button" class="btn btn-soft" id="steelAddTube"><svg class="ui-icon" aria-hidden="true"><use href="#icon-tube"></use></svg><span>加入镀锌方管</span></button>
-            <button type="button" class="btn btn-soft" id="steelAddBolt"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bolt"></use></svg><span>加入膨胀螺丝</span></button>
+            <button type="button" class="btn btn-soft" id="steelAddTube"><svg class="ui-icon" aria-hidden="true"><use href="#icon-tube"></use></svg><span>加入方管</span></button>
+            <button type="button" class="btn btn-soft" id="steelAddBolt"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bolt"></use></svg><span>加入螺丝</span></button>
           </div>
           <div class="line-list" id="steelRows"></div>
           <div class="empty-note">暂无钢铁材料数据</div>
@@ -304,6 +270,20 @@
         </div>
       </aside>
     </div>
+    </section>
+
+    <section id="adminView" class="admin-view" hidden>
+      <header class="app-header admin-page-header">
+        <div class="title-row">
+          <div class="title-block">
+            <h1>系统管理</h1>
+            <p>维护出货单参数、预设清单和打印报表模板</p>
+          </div>
+          <button type="button" class="btn btn-neutral" id="backToShipping"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg><span>返回出货单</span></button>
+        </div>
+      </header>
+      <main class="admin-root" id="adminRoot"></main>
+    </section>
   </div>
 
     <script type="module" src="./src/scripts/app.js"></script>

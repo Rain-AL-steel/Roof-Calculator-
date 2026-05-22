@@ -19,3 +19,9 @@ export function formatTrimFixed(number, digits) {
         if (!Number.isFinite(number)) return "—";
         return String(parseFloat(number.toFixed(digits)));
       }
+
+export function escapeHtml(text) {
+        return String(text || "").replace(/[&<>"']/g, function (ch) {
+          return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch];
+        });
+      }
