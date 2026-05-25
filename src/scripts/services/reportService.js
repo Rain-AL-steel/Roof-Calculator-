@@ -1,4 +1,5 @@
 import { escapeHtml, formatMoney, formatTrimFixed } from "../utils.js";
+import { computeGrandAmount, sumFiniteAmounts } from "../calc.js";
 
 function createDateString() {
   var today = new Date();
@@ -12,9 +13,9 @@ function getReportFileTitle(data) {
 }
 
 function sumSubtotal(items) {
-  return items.reduce(function (sum, item) {
-    return sum + (Number.isFinite(item.subtotal) ? item.subtotal : 0);
-  }, 0);
+  return sumFiniteAmounts((Array.isArray(items) ? items : []).map(function (item) {
+    return item.subtotal;
+  }));
 }
 
 function getCompanyDateLine(config, dateStr) {
@@ -56,9 +57,9 @@ function createBaseData(snapshot, config) {
   var accessories = Array.isArray(snapshot.accessories) ? snapshot.accessories : [];
   var steels = Array.isArray(snapshot.steels) ? snapshot.steels : [];
   var otherTiles = Array.isArray(snapshot.otherTiles) ? snapshot.otherTiles : [];
-  var qtyTotal = mainRows.reduce(function (sum, row) { return sum + row.totalQty; }, 0);
-  var areaTotal = mainRows.reduce(function (sum, row) { return sum + row.area; }, 0);
-  var mainAmount = Number.isFinite(snapshot.mainAmount) ? snapshot.mainAmount : 0;
+  var qtyTotal = sumFiniteAmounts(mainRows.map(function (row) { return row.totalQty; }));
+  var areaTotal = sumFiniteAmounts(mainRows.map(function (row) { return row.area; }));
+  var mainAmount = sumFiniteAmounts([snapshot.mainAmount]);
   var accessoryAmount = sumSubtotal(accessories);
   var steelAmount = sumSubtotal(steels);
   var otherTileAmount = sumSubtotal(otherTiles);
@@ -74,7 +75,7 @@ function createBaseData(snapshot, config) {
     steelAmount: steelAmount,
     otherTiles: otherTiles,
     otherTileAmount: otherTileAmount,
-    grandAmount: mainAmount + accessoryAmount + steelAmount + otherTileAmount,
+    grandAmount: computeGrandAmount(mainAmount, accessoryAmount, steelAmount, otherTileAmount),
     dateStr: createDateString(),
     customerName: String(snapshot.customerName || "").trim(),
     tileColor: String(snapshot.tileColor || "").trim(),

@@ -1,4 +1,13 @@
-import { actualSegments, computeSlopeLength } from "../../calc.js";
+import {
+  actualSegments,
+  computeArea,
+  computeGrandAmount,
+  computeLineSubtotal,
+  computeMainAmount,
+  computeSlopeLength,
+  lengthToPreciseSegments,
+  segmentCountToLength
+} from "../../calc.js";
 import { buildPreferredReport } from "../../services/reportService.js";
 import { escapeHtml, formatMoney, formatNum, formatTrimFixed, parseNum } from "../../utils.js";
 
@@ -104,9 +113,9 @@ export function initShippingPage(options) {
     return Number.isFinite(value) && value > 0 ? value : NaN;
   }
 
-  function computeMainAmount(area) {
+  function getMainAmount(area) {
     var unitPrice = parseNum(unitPriceInput.value);
-    return Number.isFinite(unitPrice) ? Math.round(area * unitPrice) : 0;
+    return computeMainAmount(area, unitPrice);
   }
 
   function renderDataList(listEl, optionsList) {
@@ -204,15 +213,15 @@ export function initShippingPage(options) {
     var segment = getGlobalSegment();
     var lengthSource = "manual";
     if (Number.isFinite(segCount) && Number.isFinite(segment)) {
-      length = Number((segCount * segment).toFixed(3));
+      length = segmentCountToLength(segCount, segment);
       lengthSource = "segment";
     } else if (!Number.isFinite(segCount) && Number.isFinite(slopeLength)) {
       length = Number(slopeLength.toFixed(3));
       lengthSource = "slope";
     }
-    var precise = Number.isFinite(length) && Number.isFinite(segment) ? length / segment : NaN;
+    var precise = lengthToPreciseSegments(length, segment);
     var actual = actualSegments(precise);
-    var area = Number.isFinite(length) && Number.isFinite(qty) ? length * qty * getFixedWidth() : NaN;
+    var area = computeArea(length, qty, getFixedWidth());
     return {
       length: length,
       qty: qty,
@@ -315,7 +324,7 @@ export function initShippingPage(options) {
       if (Number.isFinite(area)) sumArea += area;
     });
     totals.area = sumArea;
-    totals.main = computeMainAmount(sumArea);
+    totals.main = getMainAmount(sumArea);
     totalAreaEl.textContent = formatNum(totals.area, 4);
     mainAmountEl.textContent = formatMoney(totals.main);
     recalcGrandTotal();
@@ -382,10 +391,10 @@ export function initShippingPage(options) {
       var qty = parseNum(row.querySelector(".acc-qty").value);
       var unit = row.querySelector(".acc-unit").value.trim();
       var price = parseNum(row.querySelector(".acc-price").value);
-      var subtotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : NaN;
+      var subtotal = computeLineSubtotal(qty, price);
       return { name: name, qty: qty, unit: unit, price: price, subtotal: subtotal };
     }).filter(function (item) {
-      return item.name && Number.isFinite(item.qty) && Number.isFinite(item.price);
+      return item.name && Number.isFinite(item.subtotal);
     });
   }
 
@@ -394,7 +403,7 @@ export function initShippingPage(options) {
     Array.prototype.slice.call(accessoryRowsEl.querySelectorAll(".acc-row")).forEach(function (row) {
       var qty = parseNum(row.querySelector(".acc-qty").value);
       var price = parseNum(row.querySelector(".acc-price").value);
-      var subtotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : NaN;
+      var subtotal = computeLineSubtotal(qty, price);
       row.querySelector(".acc-subtotal").textContent = Number.isFinite(subtotal) ? formatMoney(subtotal) : "—";
       if (Number.isFinite(subtotal)) total += subtotal;
     });
@@ -435,10 +444,10 @@ export function initShippingPage(options) {
       var qty = parseNum(row.querySelector(".steel-qty").value);
       var unit = row.querySelector(".steel-unit").value.trim();
       var price = parseNum(row.querySelector(".steel-price").value);
-      var subtotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : NaN;
+      var subtotal = computeLineSubtotal(qty, price);
       return { name: name, qty: qty, unit: unit, price: price, subtotal: subtotal };
     }).filter(function (item) {
-      return item.name && Number.isFinite(item.qty) && Number.isFinite(item.price);
+      return item.name && Number.isFinite(item.subtotal);
     });
   }
 
@@ -447,7 +456,7 @@ export function initShippingPage(options) {
     Array.prototype.slice.call(steelRowsEl.querySelectorAll(".steel-row")).forEach(function (row) {
       var qty = parseNum(row.querySelector(".steel-qty").value);
       var price = parseNum(row.querySelector(".steel-price").value);
-      var subtotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : NaN;
+      var subtotal = computeLineSubtotal(qty, price);
       row.querySelector(".steel-subtotal").textContent = Number.isFinite(subtotal) ? formatMoney(subtotal) : "—";
       if (Number.isFinite(subtotal)) total += subtotal;
     });
@@ -486,10 +495,10 @@ export function initShippingPage(options) {
       var qty = parseNum(row.querySelector(".other-tile-qty").value);
       var unit = row.querySelector(".other-tile-unit").value.trim();
       var price = parseNum(row.querySelector(".other-tile-price").value);
-      var subtotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : NaN;
+      var subtotal = computeLineSubtotal(qty, price);
       return { name: name, length: length, qty: qty, unit: unit, price: price, subtotal: subtotal };
     }).filter(function (item) {
-      return item.name && Number.isFinite(item.qty) && Number.isFinite(item.price);
+      return item.name && Number.isFinite(item.subtotal);
     });
   }
 
@@ -498,7 +507,7 @@ export function initShippingPage(options) {
     Array.prototype.slice.call(otherTileRowsEl.querySelectorAll(".other-row")).forEach(function (row) {
       var qty = parseNum(row.querySelector(".other-tile-qty").value);
       var price = parseNum(row.querySelector(".other-tile-price").value);
-      var subtotal = Number.isFinite(qty) && Number.isFinite(price) ? qty * price : NaN;
+      var subtotal = computeLineSubtotal(qty, price);
       row.querySelector(".other-tile-subtotal").textContent = Number.isFinite(subtotal) ? formatMoney(subtotal) : "—";
       if (Number.isFinite(subtotal)) total += subtotal;
     });
@@ -509,7 +518,7 @@ export function initShippingPage(options) {
   }
 
   function recalcGrandTotal() {
-    totals.grand = totals.main + totals.accessories + totals.steel + totals.otherTiles;
+    totals.grand = computeGrandAmount(totals.main, totals.accessories, totals.steel, totals.otherTiles);
     grandAmountEl.textContent = formatMoney(totals.grand);
   }
 
@@ -560,7 +569,7 @@ export function initShippingPage(options) {
     return {
       mainRows: getMergedMainRows(),
       unitPrice: unitPrice,
-      mainAmount: computeMainAmount(areaTotal),
+      mainAmount: getMainAmount(areaTotal),
       accessories: getAccessoryRowsData(),
       steels: getSteelRowsData(),
       otherTiles: getOtherTileRowsData(),
