@@ -31,7 +31,8 @@
   }
 
   html {
-    @apply motion-safe:scroll-smooth motion-reduce:scroll-auto;
+    @apply overflow-y-scroll motion-safe:scroll-smooth motion-reduce:scroll-auto;
+    scrollbar-gutter: stable;
   }
 
   body {
