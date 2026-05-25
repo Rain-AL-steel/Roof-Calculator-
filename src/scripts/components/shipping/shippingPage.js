@@ -190,7 +190,7 @@ export function initShippingPage(options) {
     var modeInput = row.querySelector(".inp-slope-mode");
     var slopeInput = row.querySelector(".inp-slope-value");
     if (!modeInput || !slopeInput) return;
-    slopeInput.placeholder = modeInput.value === "percent" ? "坡度%" : "角度°";
+    slopeInput.placeholder = "";
   }
 
   function getRowData(row) {
@@ -242,12 +242,12 @@ export function initShippingPage(options) {
     row.className = "calc-row";
     row.innerHTML =
       '<div class="row-index">#<span class="row-no">1</span></div>' +
-      '<label class="line-field"><span class="field-label">水平投影 A（米）</span><input class="inp-proj" type="text" inputmode="decimal" placeholder="水平投影" /></label>' +
+      '<label class="line-field"><span class="field-label">水平投影 A（米）</span><input class="inp-proj" type="text" inputmode="decimal" /></label>' +
       '<label class="line-field"><span class="field-label">换算方式</span><select class="inp-slope-mode"><option value="percent">坡度 %</option><option value="angle">角度 °</option></select></label>' +
-      '<label class="line-field"><span class="field-label">坡度/角度</span><input class="inp-slope-value" type="text" inputmode="decimal" placeholder="坡度%" /></label>' +
-      '<label class="line-field"><span class="field-label">长度 L（米）</span><input class="inp-l" type="text" inputmode="decimal" placeholder="例如 6.000" /></label>' +
-      '<label class="line-field"><span class="field-label">节数</span><input class="inp-seg" type="number" inputmode="decimal" step="1" placeholder="自动换算长度" /></label>' +
-      '<label class="line-field"><span class="field-label">数量 Q</span><input class="inp-q" type="number" inputmode="decimal" step="1" placeholder="片数" /></label>' +
+      '<label class="line-field"><span class="field-label">坡度/角度</span><input class="inp-slope-value" type="text" inputmode="decimal" /></label>' +
+      '<label class="line-field"><span class="field-label">长度 L（米）</span><input class="inp-l" type="text" inputmode="decimal" /></label>' +
+      '<label class="line-field"><span class="field-label">节数</span><input class="inp-seg" type="number" inputmode="decimal" step="1" /></label>' +
+      '<label class="line-field"><span class="field-label">数量 Q</span><input class="inp-q" type="number" inputmode="decimal" step="1" /></label>' +
       '<div class="metric"><span>斜边长度</span><strong class="out-slope-length">—</strong></div>' +
       '<div class="metric"><span>精准节数</span><strong class="out-precise">—</strong></div>' +
       '<div class="metric"><span>实裁节数</span><strong class="out-actual">—</strong></div>' +

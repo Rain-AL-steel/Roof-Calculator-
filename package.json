@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node tools/dev-server.cjs"
+    "build:css": "tailwindcss -c tailwind.config.js -i ./src/styles/tailwind.css -o ./src/styles/main.css",
+    "watch:css": "tailwindcss -c tailwind.config.js -i ./src/styles/tailwind.css -o ./src/styles/main.css --watch",
+    "dev": "npm run build:css && node tools/dev-server.cjs"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
   }
 }
