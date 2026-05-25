@@ -11,18 +11,18 @@ export default {
     },
     extend: {
       colors: {
-        "app-bg": "#f4f6f0",
-        "app-surface": "#fffffc",
-        "app-surface-raised": "rgba(255, 255, 252, 0.86)",
-        "app-surface-soft": "#eef3eb",
-        "app-line": "#d9e1d6",
-        "app-line-strong": "#b9c8b7",
-        "app-text": "#152018",
-        "app-muted": "#647064",
-        "app-primary": "#176f58",
-        "app-primary-dark": "#0f5342",
-        "app-primary-soft": "#dcece4",
-        "app-accent": "#9a6a1b",
+        "app-bg": "#ffffff",
+        "app-surface": "#ffffff",
+        "app-surface-raised": "#ffffff",
+        "app-surface-soft": "#f7f7f7",
+        "app-line": "#e5e7eb",
+        "app-line-strong": "#d1d5db",
+        "app-text": "#111827",
+        "app-muted": "#6b7280",
+        "app-primary": "#111827",
+        "app-primary-dark": "#030712",
+        "app-primary-soft": "#f3f4f6",
+        "app-accent": "#4b5563",
         "app-danger": "#b42318",
         "app-danger-soft": "#fff0ee"
       },
@@ -32,8 +32,8 @@ export default {
         "app-xl": "26px"
       },
       boxShadow: {
-        app: "0 18px 48px rgba(33, 48, 34, 0.11)",
-        "app-soft": "0 10px 26px rgba(33, 48, 34, 0.08)"
+        app: "0 1px 2px rgba(0, 0, 0, 0.05)",
+        "app-soft": "0 1px 3px rgba(0, 0, 0, 0.08)"
       },
       transitionTimingFunction: {
         "app-out": "cubic-bezier(0.16, 1, 0.3, 1)"

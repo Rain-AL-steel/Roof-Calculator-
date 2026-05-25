@@ -36,22 +36,15 @@
 
   body {
     @apply m-0 min-h-dvh bg-app-bg font-sans text-app-text antialiased;
-    background:
-      radial-gradient(circle at 12% -8%, rgba(23, 111, 88, 0.14), transparent 32rem),
-      radial-gradient(circle at 92% 2%, rgba(154, 106, 27, 0.12), transparent 28rem),
-      linear-gradient(180deg, #fbfcf7 0%, var(--bg) 34%, #eef3eb 100%);
+    background: #fff;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0;
     text-rendering: optimizeLegibility;
   }
 
   body::before {
-    @apply pointer-events-none fixed inset-0 z-0 opacity-[0.18];
-    content: "";
-    background-image:
-      linear-gradient(rgba(21, 32, 24, 0.045) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(21, 32, 24, 0.04) 1px, transparent 1px);
-    background-size: 34px 34px;
+    @apply hidden;
+    content: none;
   }
 
   button,
@@ -105,18 +98,14 @@
   }
 
   .app-header {
-    @apply relative grid gap-[18px] overflow-hidden rounded-app-lg border border-app-line p-3.5 shadow-app backdrop-blur-[14px] md:rounded-app-xl md:p-[22px];
-    background:
-      linear-gradient(135deg, rgba(255, 255, 252, 0.96), rgba(239, 246, 237, 0.84)),
-      var(--surface);
-    box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+    @apply relative grid gap-[18px] overflow-hidden rounded-app-lg border border-app-line bg-app-surface p-3.5 shadow-app md:rounded-app-xl md:p-[22px];
+    box-shadow: var(--shadow);
     transform: translateZ(0);
   }
 
   .app-header::after {
-    @apply pointer-events-none absolute -right-[72px] -top-[120px] size-[260px] rounded-full;
-    content: "";
-    background: radial-gradient(circle, rgba(23, 111, 88, 0.16), transparent 68%);
+    @apply hidden;
+    content: none;
   }
 
   .title-row {
@@ -139,7 +128,7 @@
 
   .fact {
     @apply inline-flex min-h-[34px] items-center whitespace-nowrap rounded-[10px] border border-app-line bg-app-surface/70 px-3 text-[0.82rem] font-extrabold text-app-primary-dark;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    box-shadow: none;
   }
 
   .settings-grid {
@@ -162,8 +151,8 @@
   .field textarea,
   .line-field input,
   .line-field select {
-    @apply min-h-11 w-full min-w-0 rounded-[11px] border border-app-line-strong bg-app-surface/90 px-[11px] py-2.5 text-app-text outline-none transition duration-200 ease-app-out motion-reduce:transition-none;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+    @apply min-h-11 w-full min-w-0 rounded-[11px] border border-app-line-strong bg-white px-[11px] py-2.5 text-app-text outline-none transition duration-200 ease-app-out motion-reduce:transition-none;
+    box-shadow: none;
   }
 
   .field input:focus,
@@ -173,7 +162,7 @@
   .line-field select:focus,
   .admin-input:focus {
     @apply border-app-primary bg-white;
-    box-shadow: 0 0 0 4px rgba(23, 111, 88, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+    box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.08);
   }
 
   .field textarea {
@@ -232,7 +221,7 @@
   .nav-tab,
   .btn {
     @apply inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-transparent bg-app-surface/90 px-3.5 py-2.5 font-extrabold text-app-text transition duration-200 ease-app-out motion-reduce:transition-none md:w-auto;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    box-shadow: none;
   }
 
   .nav-tab {
@@ -248,8 +237,8 @@
 
   .nav-tab.active {
     @apply border-app-primary text-white;
-    background: linear-gradient(180deg, #1b7b61, var(--primary-dark));
-    box-shadow: 0 12px 28px rgba(23, 111, 88, 0.23);
+    background: var(--primary);
+    box-shadow: var(--shadow-soft);
   }
 
   .btn:active,
@@ -260,17 +249,17 @@
 
   .btn-primary {
     @apply border-app-primary text-white;
-    background: linear-gradient(180deg, #1a7a61, var(--primary-dark));
-    box-shadow: 0 14px 30px rgba(23, 111, 88, 0.22);
+    background: var(--primary);
+    box-shadow: var(--shadow-soft);
   }
 
   .btn-primary:hover {
     @apply -translate-y-px border-app-primary-dark motion-reduce:translate-y-0;
-    background: linear-gradient(180deg, #1a765e, #0c483a);
+    background: var(--primary-dark);
   }
 
   .btn-soft {
-    @apply border-[#b9ded1] bg-app-primary-soft text-app-primary-dark;
+    @apply border-app-line-strong bg-app-primary-soft text-app-primary-dark;
   }
 
   .btn-neutral {
@@ -290,8 +279,8 @@
   }
 
   .panel {
-    @apply hidden min-w-0 rounded-app-lg border border-app-line bg-app-surface-raised p-3.5 shadow-app backdrop-blur-[14px] md:rounded-app-xl md:p-5;
-    box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    @apply hidden min-w-0 rounded-app-lg border border-app-line bg-app-surface-raised p-3.5 shadow-app md:rounded-app-xl md:p-5;
+    box-shadow: var(--shadow);
     transform: translateZ(0);
   }
 
@@ -332,20 +321,20 @@
   }
 
   .calc-row {
-    @apply grid grid-cols-2 items-end gap-[9px] rounded-app-lg border border-app-line bg-app-surface/75 p-2.5 transition duration-200 ease-app-out motion-reduce:transition-none motion-safe:animate-row-in md:grid-cols-[72px_repeat(6,minmax(86px,1fr))_38px] md:p-3;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+    @apply grid grid-cols-2 items-end gap-[9px] rounded-app-lg border border-app-line bg-white p-2.5 transition duration-200 ease-app-out motion-reduce:transition-none motion-safe:animate-row-in md:grid-cols-[72px_repeat(6,minmax(86px,1fr))_38px] md:gap-[7px] md:p-3 lg:gap-[9px];
+    box-shadow: none;
   }
 
   .calc-row:hover,
   .line-row:hover {
-    @apply -translate-y-px border-app-primary/30 bg-app-surface/95 shadow-app-soft motion-reduce:translate-y-0;
-    box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    @apply -translate-y-px border-app-line-strong bg-white shadow-app-soft motion-reduce:translate-y-0;
+    box-shadow: var(--shadow-soft);
   }
 
   .calc-row .row-index,
   .calc-row .btn-del,
   .calc-row .metric {
-    @apply col-auto row-auto md:col-auto md:row-auto;
+    @apply col-auto row-auto;
   }
 
   .calc-row .row-index,
@@ -353,18 +342,58 @@
     @apply md:row-span-2;
   }
 
-  .calc-row .btn-del {
-    @apply md:col-[-2/-1];
+  .calc-row .row-index {
+    @apply md:col-start-1 md:row-start-1;
   }
 
-  .calc-row .metric {
-    @apply md:row-start-2;
+  .calc-row > .line-field:nth-of-type(1) {
+    @apply md:col-start-2 md:row-start-1;
+  }
+
+  .calc-row > .line-field:nth-of-type(2) {
+    @apply md:col-start-3 md:row-start-1;
+  }
+
+  .calc-row > .line-field:nth-of-type(3) {
+    @apply md:col-start-4 md:row-start-1;
+  }
+
+  .calc-row > .line-field:nth-of-type(4) {
+    @apply md:col-start-5 md:row-start-1;
+  }
+
+  .calc-row > .line-field:nth-of-type(5) {
+    @apply md:col-start-6 md:row-start-1;
+  }
+
+  .calc-row > .line-field:nth-of-type(6) {
+    @apply md:col-start-7 md:row-start-1;
+  }
+
+  .calc-row .btn-del {
+    @apply md:col-start-8 md:row-start-1;
+  }
+
+  .calc-row > .metric:nth-of-type(2) {
+    @apply md:col-start-2 md:row-start-2;
+  }
+
+  .calc-row > .metric:nth-of-type(3) {
+    @apply md:col-start-3 md:row-start-2;
+  }
+
+  .calc-row > .metric:nth-of-type(4) {
+    @apply md:col-start-4 md:row-start-2;
+  }
+
+  .calc-row > .metric:nth-of-type(5) {
+    @apply md:col-start-5 md:row-start-2;
   }
 
   .row-index {
     @apply flex min-h-11 items-center justify-center self-stretch whitespace-nowrap rounded-xl text-[0.86rem] font-black text-white;
-    background: linear-gradient(180deg, #1b7b61, var(--primary-dark));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    background: var(--primary);
+    box-shadow: none;
   }
 
   .line-field {
@@ -373,9 +402,8 @@
 
   .metric,
   .subtotal-box {
-    @apply min-h-11 overflow-hidden rounded-xl border border-app-line px-[9px] py-2;
-    background: linear-gradient(180deg, rgba(255, 255, 252, 0.92), rgba(244, 248, 241, 0.86));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    @apply min-h-11 overflow-hidden rounded-xl border border-app-line bg-app-surface-soft px-[9px] py-2;
+    box-shadow: none;
   }
 
   .metric span,
@@ -405,7 +433,7 @@
 
   .icon-btn:hover {
     @apply bg-[#ffe5e1];
-    box-shadow: 0 10px 22px rgba(180, 35, 24, 0.12);
+    box-shadow: var(--shadow-soft);
   }
 
   .preset-area {
@@ -433,16 +461,15 @@
   .preset-btn::before {
     @apply size-[7px] flex-none rounded-full bg-app-line-strong transition duration-200 ease-app-out motion-reduce:transition-none;
     content: "";
-    box-shadow: 0 0 0 4px rgba(23, 111, 88, 0.06);
+    box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.04);
   }
 
   .preset-btn:hover {
-    @apply border-app-primary bg-[#f7fbf8];
+    @apply border-app-primary bg-app-surface-soft;
   }
 
   .preset-btn.selected {
-    @apply border-[#81bda9] text-app-primary-dark;
-    background: linear-gradient(180deg, #edf7f2, var(--primary-soft));
+    @apply border-app-primary bg-app-primary-soft text-app-primary-dark;
   }
 
   .preset-btn.selected::before {
@@ -458,8 +485,8 @@
   }
 
   .line-row {
-    @apply grid grid-cols-2 items-end gap-[9px] rounded-app-lg border border-app-line bg-app-surface/75 p-2.5 transition duration-200 ease-app-out motion-reduce:transition-none motion-safe:animate-row-in md:grid-cols-[minmax(160px,1.3fr)_92px_88px_104px_116px_38px] md:p-3;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+    @apply grid grid-cols-2 items-end gap-[9px] rounded-app-lg border border-app-line bg-white p-2.5 transition duration-200 ease-app-out motion-reduce:transition-none motion-safe:animate-row-in md:grid-cols-[minmax(160px,1.3fr)_92px_88px_104px_116px_38px] md:p-3;
+    box-shadow: none;
   }
 
   .line-row.other-row {
@@ -479,7 +506,7 @@
   }
 
   .panel-total {
-    @apply mt-3.5 rounded-[14px] border border-app-line bg-[#f4f8f1]/70 px-3.5 py-3 text-right font-black text-app-muted;
+    @apply mt-3.5 rounded-[14px] border border-app-line bg-app-surface-soft px-3.5 py-3 text-right font-black text-app-muted;
   }
 
   .panel-total strong {
@@ -491,13 +518,12 @@
   }
 
   .steel-config {
-    @apply mb-4 grid grid-cols-1 gap-3 rounded-app-lg border border-app-line bg-[#f4f8f1]/65 p-3 md:grid-cols-3;
+    @apply mb-4 grid grid-cols-1 gap-3 rounded-app-lg border border-app-line bg-app-surface-soft p-3 md:grid-cols-3;
   }
 
   .summary-panel {
-    @apply order-first rounded-app-lg border border-app-line p-3.5 shadow-app backdrop-blur-[14px] lg:sticky lg:top-4 lg:order-none md:rounded-app-xl md:p-[18px];
-    background: linear-gradient(180deg, rgba(255, 255, 252, 0.95), rgba(243, 248, 240, 0.88));
-    box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.84);
+    @apply order-first rounded-app-lg border border-app-line bg-white p-3.5 shadow-app lg:sticky lg:top-4 lg:order-none md:rounded-app-xl md:p-[18px];
+    box-shadow: var(--shadow);
     transform: translateZ(0);
   }
 
@@ -522,17 +548,16 @@
   }
 
   .summary-line.grand {
-    @apply mt-1.5 grid rounded-2xl border border-[#d2bd88] p-3.5 md:flex;
-    background: linear-gradient(180deg, #fff9e9, #f6ecd1);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    @apply mt-1.5 grid rounded-2xl border border-app-line-strong bg-app-surface-soft p-3.5 md:flex;
+    box-shadow: none;
   }
 
   .summary-line.grand span {
-    @apply text-[#6f4d13];
+    @apply text-app-muted;
   }
 
   .summary-line.grand strong {
-    @apply text-[1.28rem] text-[#4d3410];
+    @apply text-[1.28rem] text-app-text;
   }
 
   .summary-actions {
@@ -541,8 +566,8 @@
 
   .empty-note {
     @apply hidden rounded-app-lg border border-dashed border-app-line-strong px-4 py-6 text-center font-extrabold text-app-muted;
-    background: linear-gradient(180deg, rgba(255, 255, 252, 0.84), rgba(242, 247, 239, 0.72));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    background: var(--surface-soft);
+    box-shadow: none;
   }
 
   .line-list:empty + .empty-note,
@@ -559,8 +584,8 @@
   }
 
   .admin-actions-bar {
-    @apply sticky top-2.5 z-[2] grid grid-cols-2 items-center gap-2 rounded-app-lg border border-app-line bg-app-surface/90 p-3 shadow-app-soft backdrop-blur-[14px] md:flex md:flex-wrap;
-    box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    @apply sticky top-2.5 z-[2] grid grid-cols-2 items-center gap-2 rounded-app-lg border border-app-line bg-white p-3 shadow-app-soft md:flex md:flex-wrap;
+    box-shadow: var(--shadow-soft);
   }
 
   .admin-import-label {
@@ -585,8 +610,8 @@
   }
 
   .admin-section {
-    @apply grid gap-3 rounded-app-lg border border-app-line bg-app-surface-raised p-3.5 shadow-app backdrop-blur-[14px] md:rounded-app-xl md:p-[18px];
-    box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    @apply grid gap-3 rounded-app-lg border border-app-line bg-app-surface-raised p-3.5 shadow-app md:rounded-app-xl md:p-[18px];
+    box-shadow: var(--shadow);
   }
 
   .admin-section-head {
@@ -649,7 +674,7 @@
   }
 
   .admin-move {
-    @apply border-[#b9ded1] bg-app-primary-soft text-app-primary-dark;
+    @apply border-app-line-strong bg-app-primary-soft text-app-primary-dark;
   }
 
   .admin-logo-row {
@@ -657,7 +682,7 @@
   }
 
   .logo-preview {
-    @apply flex h-[58px] w-full items-center justify-center overflow-hidden rounded-xl border border-app-line bg-[#f4f8f1]/70 text-[0.78rem] font-black text-app-muted md:w-[120px];
+    @apply flex h-[58px] w-full items-center justify-center overflow-hidden rounded-xl border border-app-line bg-app-surface-soft text-[0.78rem] font-black text-app-muted md:w-[120px];
   }
 
   .logo-preview img {
