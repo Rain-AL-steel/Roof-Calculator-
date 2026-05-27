@@ -5,6 +5,7 @@
 ## 目录结构
 
 - `index.html`：页面入口，只保留 HTML 结构和资源引用。
+- `树脂功能优化.html`：复原后的原始单文件版本。
 - `src/styles/main.css`：页面样式。
 - `src/scripts/app.js`：应用启动、DOM 事件和主要业务流程。
 - `src/scripts/config.js`：固定宽度和预设清单。

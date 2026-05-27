@@ -52,8 +52,11 @@ export function initShippingPage(options) {
   var grandAmountEl = document.getElementById("grandAmount");
   var globalSegmentInput = document.getElementById("globalSegmentInput");
   var unitPriceInput = document.getElementById("unitPrice");
+  var orderDateInput = document.getElementById("orderDate");
+  var orderNoInput = document.getElementById("orderNo");
   var customerNameInput = document.getElementById("customerName");
   var tileColorInput = document.getElementById("tileColor");
+  var orderRemarkInput = document.getElementById("orderRemark");
   var tileColorOptions = document.getElementById("tileColorOptions");
   var unitOptions = document.getElementById("unitOptions");
   var logoUploadInput = document.getElementById("logoUpload");
@@ -116,6 +119,15 @@ export function initShippingPage(options) {
   function getMainAmount(area) {
     var unitPrice = parseNum(unitPriceInput.value);
     return computeMainAmount(area, unitPrice);
+  }
+
+  function getDateOnly(date) {
+    var value = date instanceof Date ? date : new Date();
+    return value.getFullYear() + "-" + String(value.getMonth() + 1).padStart(2, "0") + "-" + String(value.getDate()).padStart(2, "0");
+  }
+
+  function ensureOrderDate() {
+    if (orderDateInput && !orderDateInput.value) orderDateInput.value = getDateOnly(new Date());
   }
 
   function renderDataList(listEl, optionsList) {
@@ -575,7 +587,37 @@ export function initShippingPage(options) {
       otherTiles: getOtherTileRowsData(),
       customerName: customerNameInput.value.trim(),
       tileColor: tileColorInput.value.trim(),
+      remark: orderRemarkInput ? orderRemarkInput.value.trim() : "",
       logoDataUrl: reportLogoDataUrl
+    };
+  }
+
+  function buildOrderDraft() {
+    recalcAll();
+    recalcAccessoryTotals();
+    recalcSteelTotals();
+    recalcOtherTileTotals();
+    var snapshot = buildReportSnapshot();
+    return {
+      orderDate: orderDateInput ? orderDateInput.value : getDateOnly(new Date()),
+      orderNo: orderNoInput ? orderNoInput.value.trim() : "",
+      customerName: snapshot.customerName,
+      tileColor: snapshot.tileColor,
+      remark: snapshot.remark,
+      totals: {
+        areaTotal: totals.area,
+        mainAmount: totals.main,
+        accessoryAmount: totals.accessories,
+        steelAmount: totals.steel,
+        otherTileAmount: totals.otherTiles,
+        grandAmount: totals.grand
+      },
+      items: {
+        mainRows: snapshot.mainRows,
+        accessories: snapshot.accessories,
+        steels: snapshot.steels,
+        otherTiles: snapshot.otherTiles
+      }
     };
   }
 
@@ -698,6 +740,7 @@ export function initShippingPage(options) {
   });
 
   applyConfig(currentConfig, { initial: true });
+  ensureOrderDate();
   appendRows(12);
   setupNumberWheelGuard();
   ensureTrailingBlankRow();
@@ -707,7 +750,9 @@ export function initShippingPage(options) {
 
   return {
     applyConfig: applyConfig,
+    createOrderDraft: buildOrderDraft,
     recalc: function () {
+      ensureOrderDate();
       recalcAll();
       recalcAccessoryTotals();
       recalcSteelTotals();

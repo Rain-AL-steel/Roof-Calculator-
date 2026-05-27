@@ -27,6 +27,12 @@ function send(res, status, body, type) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://" + req.headers.host);
   const pathname = decodeURIComponent(url.pathname);
+  if (pathname === "/favicon.ico") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   let filePath = path.join(root, pathname === "/" ? "index.html" : pathname);
   const normalized = path.normalize(filePath);
 

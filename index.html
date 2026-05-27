@@ -70,10 +70,164 @@
       <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
       <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 1 1-2.83 2.83l-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6V20a2 2 0 1 1-4 0v-.06a1.7 1.7 0 0 0-1-.54 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 1 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1H4a2 2 0 1 1 0-4h.06a1.7 1.7 0 0 0 .54-1 1.7 1.7 0 0 0-.34-1.88l-.04-.04A2 2 0 1 1 7.05 4.25l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6V4a2 2 0 1 1 4 0v.06a1.7 1.7 0 0 0 1 .54 1.7 1.7 0 0 0 1.88-.34l.04-.04a2 2 0 1 1 2.83 2.83l-.04.04A1.7 1.7 0 0 0 19.4 9c.23.35.43.67.6 1H20a2 2 0 1 1 0 4h-.06c-.14.33-.32.66-.54 1Z" />
     </symbol>
+    <symbol id="icon-home" viewBox="0 0 24 24">
+      <path d="M4 11.5 12 5l8 6.5" />
+      <path d="M6.5 10.5V20h11v-9.5" />
+      <path d="M9.5 20v-5h5v5" />
+    </symbol>
+    <symbol id="icon-history" viewBox="0 0 24 24">
+      <path d="M4 12a8 8 0 1 0 2.4-5.7" />
+      <path d="M4 5.5V10h4.5" />
+      <path d="M12 8v4.5l3 2" />
+    </symbol>
+    <symbol id="icon-database" viewBox="0 0 24 24">
+      <path d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3Z" />
+      <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+      <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+    </symbol>
+    <symbol id="icon-save" viewBox="0 0 24 24">
+      <path d="M5 4h12l2 2v14H5V4Z" />
+      <path d="M8 4v6h8V4" />
+      <path d="M8 20v-6h8v6" />
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24">
+      <path d="M12 4v10" />
+      <path d="m8 10 4 4 4-4" />
+      <path d="M5 20h14" />
+    </symbol>
+    <symbol id="icon-upload" viewBox="0 0 24 24">
+      <path d="M12 20V10" />
+      <path d="m8 14 4-4 4 4" />
+      <path d="M5 4h14" />
+    </symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24">
+      <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+      <path d="m13.5 6.5 4 4" />
+    </symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24">
+      <path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z" />
+      <path d="m16 16 4 4" />
+    </symbol>
   </svg>
   <a class="skip-link" href="#content">跳到内容</a>
   <div class="app-shell">
-    <section id="shippingView" class="shipping-view">
+    <section id="authView" class="auth-view" hidden>
+      <div class="auth-card">
+        <p class="eyebrow">本地登录</p>
+        <h1 id="authTitle">登录系统</h1>
+        <p id="authSubtitle">请输入本机密码后继续使用。</p>
+        <form id="authForm" class="auth-form">
+          <div class="field">
+            <label for="authPassword">密码</label>
+            <input id="authPassword" type="password" autocomplete="current-password" />
+          </div>
+          <div class="field" id="authConfirmField" hidden>
+            <label for="authConfirmPassword">确认密码</label>
+            <input id="authConfirmPassword" type="password" autocomplete="new-password" />
+          </div>
+          <p class="auth-status" id="authStatus" role="alert"></p>
+          <button type="submit" class="btn btn-primary" id="authSubmit"><svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg><span>进入系统</span></button>
+        </form>
+      </div>
+    </section>
+
+    <header class="workspace-header" id="workspaceHeader" hidden>
+      <div class="workspace-title">
+        <div>
+          <p class="eyebrow">v2.0 本地订单工具</p>
+          <h1>简易订单与出货打单工具</h1>
+        </div>
+        <div class="workspace-controls">
+          <button type="button" class="btn btn-neutral" id="adminTopToggle"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg><span>系统管理</span></button>
+          <button type="button" class="btn btn-neutral" id="logoutButton"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg><span>退出登录</span></button>
+        </div>
+      </div>
+      <nav class="workspace-tabs" aria-label="业务模块">
+        <button type="button" class="workspace-tab active" data-app-view="dashboardView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg><span>首页</span></button>
+        <button type="button" class="workspace-tab" data-app-view="shippingView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>打单计算机</span></button>
+        <button type="button" class="workspace-tab" data-app-view="historyView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg><span>历史记录</span></button>
+        <button type="button" class="workspace-tab" data-app-view="dataView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-database"></use></svg><span>数据管理</span></button>
+      </nav>
+    </header>
+
+    <section id="dashboardView" class="business-view dashboard-view" hidden>
+      <div class="dashboard-grid">
+        <section class="dashboard-panel dashboard-hero">
+          <div>
+            <p class="eyebrow">今日概览</p>
+            <h2 id="dashboardDateTitle">今日订单</h2>
+          </div>
+          <div class="metric-grid">
+            <div class="metric-card">
+              <span>今日订单数</span>
+              <strong id="todayOrderCount">0</strong>
+            </div>
+            <div class="metric-card">
+              <span>今日订单金额</span>
+              <strong id="todayOrderAmount">0.00</strong>
+            </div>
+            <div class="metric-card">
+              <span>今日总面积</span>
+              <strong id="todayOrderArea">0.0000</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="section-head compact">
+            <div>
+              <h2>历史累计</h2>
+              <p class="subtext">统计当前浏览器本地保存的数据。</p>
+            </div>
+          </div>
+          <div class="metric-list">
+            <div><span>历史订单数</span><strong id="totalOrderCount">0</strong></div>
+            <div><span>历史订单金额</span><strong id="totalOrderAmount">0.00</strong></div>
+            <div><span>历史总面积</span><strong id="totalOrderArea">0.0000</strong></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="dashboard-panel trend-panel">
+        <div class="section-head compact">
+          <div>
+            <h2>订单趋势</h2>
+            <p class="subtext" id="trendSubtitle">查看最近 7 天的订单数量和订单金额。</p>
+          </div>
+          <div class="range-switch" role="tablist" aria-label="趋势时间范围">
+            <button type="button" class="range-btn active" data-trend-range="7d">7天</button>
+            <button type="button" class="range-btn" data-trend-range="30d">30天</button>
+            <button type="button" class="range-btn" data-trend-range="1y">一年</button>
+          </div>
+        </div>
+        <div class="trend-stats">
+          <div><span>范围内订单数</span><strong id="trendTotalCount">0</strong></div>
+          <div><span>范围内订单金额</span><strong id="trendTotalAmount">0.00</strong></div>
+        </div>
+        <div class="trend-legend" aria-label="图例">
+          <span><i class="legend-dot count"></i>订单数量</span>
+          <span><i class="legend-dot amount"></i>订单金额</span>
+        </div>
+        <div class="trend-chart-wrap">
+          <svg id="orderTrendChart" class="trend-chart" viewBox="0 0 920 320" role="img" aria-label="订单趋势折线图"></svg>
+          <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
+        </div>
+      </section>
+
+      <section class="dashboard-panel">
+        <div class="section-head compact">
+          <div>
+            <h2>最近订单</h2>
+            <p class="subtext">保存后会立即出现在这里和历史记录中。</p>
+          </div>
+          <button type="button" class="btn btn-soft" data-app-view="shippingView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg><span>新建订单</span></button>
+        </div>
+        <div class="order-list" id="recentOrderList"></div>
+        <div class="empty-note" id="recentOrderEmpty">暂无订单记录</div>
+      </section>
+    </section>
+
+    <section id="shippingView" class="business-view shipping-view" hidden>
     <header class="app-header">
       <div class="title-row">
         <div class="title-block">
@@ -101,6 +255,14 @@
           <input id="unitPrice" type="number" inputmode="decimal" step="0.01" />
         </div>
         <div class="field">
+          <label for="orderDate">订单日期</label>
+          <input id="orderDate" type="date" />
+        </div>
+        <div class="field">
+          <label for="orderNo">订单编号</label>
+          <input id="orderNo" type="text" autocomplete="off" placeholder="留空自动生成" />
+        </div>
+        <div class="field">
           <label for="customerName">客户姓名</label>
           <input id="customerName" type="text" autocomplete="off" />
         </div>
@@ -108,6 +270,10 @@
           <label for="tileColor">颜色</label>
           <input id="tileColor" type="text" list="tileColorOptions" autocomplete="off" />
           <datalist id="tileColorOptions"></datalist>
+        </div>
+        <div class="field span-2">
+          <label for="orderRemark">备注</label>
+          <input id="orderRemark" type="text" autocomplete="off" placeholder="可填写收货、运输或临时说明" />
         </div>
         <div class="field">
           <label for="logoUpload">报表 Logo</label>
@@ -129,6 +295,7 @@
         <button type="button" class="nav-tab" data-target="otherTilePanel"><svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg><span>其他瓦</span></button>
       </nav>
       <button type="button" class="btn btn-primary" id="exportPdf"><svg class="ui-icon" aria-hidden="true"><use href="#icon-file"></use></svg><span>生成打印报表</span></button>
+      <button type="button" class="btn btn-soft" id="saveOrder"><svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg><span>保存记录</span></button>
     </div>
 
     <div class="main-layout">
@@ -266,10 +433,108 @@
           </div>
         </div>
         <div class="summary-actions">
+          <button type="button" class="btn btn-soft" id="saveOrderSide"><svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg><span>保存记录</span></button>
           <button type="button" class="btn btn-primary" id="exportPdfSide"><svg class="ui-icon" aria-hidden="true"><use href="#icon-file"></use></svg><span>生成打印报表</span></button>
         </div>
       </aside>
     </div>
+    </section>
+
+    <section id="historyView" class="business-view history-view" hidden>
+      <header class="app-header">
+        <div class="title-row">
+          <div class="title-block">
+            <h1>历史记录</h1>
+            <p>按日期、订单编号或客户名称查找本地保存的订单。</p>
+          </div>
+          <button type="button" class="btn btn-danger" id="clearAllOrders"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg><span>清空全部数据</span></button>
+        </div>
+        <div class="history-filters">
+          <div class="field">
+            <label for="historyDateFilter">日期筛选</label>
+            <input id="historyDateFilter" type="date" />
+          </div>
+          <div class="field">
+            <label for="historyOrderSearch">订单编号</label>
+            <input id="historyOrderSearch" type="search" autocomplete="off" placeholder="输入订单编号" />
+          </div>
+          <div class="field">
+            <label for="historyCustomerSearch">客户名称</label>
+            <input id="historyCustomerSearch" type="search" autocomplete="off" placeholder="输入客户名称" />
+          </div>
+          <button type="button" class="btn btn-neutral" id="resetHistoryFilters"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg><span>重置筛选</span></button>
+        </div>
+      </header>
+
+      <div class="history-layout">
+        <section class="dashboard-panel">
+          <div class="section-head compact">
+            <div>
+              <h2>订单列表</h2>
+              <p class="subtext" id="historyCountText">共 0 条记录</p>
+            </div>
+          </div>
+          <div class="history-table-wrap">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>订单编号</th>
+                  <th>客户</th>
+                  <th>金额</th>
+                  <th>面积</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-note" id="historyEmpty">暂无符合条件的订单</div>
+        </section>
+
+        <aside class="record-detail" id="recordDetail" hidden>
+          <div class="section-head compact">
+            <div>
+              <h2 id="recordDetailTitle">订单详情</h2>
+              <p class="subtext" id="recordDetailSubtitle">查看或编辑已保存记录。</p>
+            </div>
+            <button type="button" class="icon-btn" id="closeRecordDetail" title="关闭详情" aria-label="关闭详情"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg></button>
+          </div>
+          <div id="recordDetailBody"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="dataView" class="business-view data-view" hidden>
+      <header class="app-header">
+        <div class="title-row">
+          <div class="title-block">
+            <h1>数据管理</h1>
+            <p>本阶段所有数据保存在当前浏览器，请定期导出 JSON 备份。</p>
+          </div>
+          <div class="quick-facts">
+            <button type="button" class="btn btn-primary" id="exportData"><svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg><span>导出 JSON</span></button>
+            <label class="btn btn-soft import-trigger" for="importDataFile"><svg class="ui-icon" aria-hidden="true"><use href="#icon-upload"></use></svg><span>导入 JSON</span></label>
+            <input class="visually-hidden-file" id="importDataFile" type="file" accept="application/json,.json" />
+          </div>
+        </div>
+      </header>
+
+      <section class="dashboard-panel">
+        <div class="section-head compact">
+          <div>
+            <h2>本地数据状态</h2>
+            <p class="subtext">只统计当前浏览器的 localStorage 数据。</p>
+          </div>
+        </div>
+        <div class="data-status-grid">
+          <div><span>当前记录数</span><strong id="dataOrderCount">0</strong></div>
+          <div><span>最近一次保存</span><strong id="dataLastSaved">未保存</strong></div>
+          <div><span>最近一次导出</span><strong id="dataLastExported">未导出</strong></div>
+          <div><span>最近一次导入</span><strong id="dataLastImported">未导入</strong></div>
+        </div>
+        <p class="data-note" id="dataStatusMessage" role="status"></p>
+      </section>
     </section>
 
     <section id="adminView" class="admin-view" hidden>
