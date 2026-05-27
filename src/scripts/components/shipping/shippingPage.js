@@ -8,6 +8,7 @@ import {
   lengthToPreciseSegments,
   segmentCountToLength
 } from "../../calc.js";
+import { generateOrderNo } from "../../services/orderService.js";
 import { buildPreferredReport } from "../../services/reportService.js";
 import { escapeHtml, formatMoney, formatNum, formatTrimFixed, parseNum } from "../../utils.js";
 
@@ -128,6 +129,16 @@ export function initShippingPage(options) {
 
   function ensureOrderDate() {
     if (orderDateInput && !orderDateInput.value) orderDateInput.value = getDateOnly(new Date());
+  }
+
+  function ensureOrderNo() {
+    if (!orderNoInput) return "";
+    var value = orderNoInput.value.trim();
+    if (!value) {
+      value = generateOrderNo(new Date());
+      orderNoInput.value = value;
+    }
+    return value;
   }
 
   function renderDataList(listEl, optionsList) {
@@ -578,7 +589,10 @@ export function initShippingPage(options) {
   function buildReportSnapshot() {
     var areaTotal = totals.area;
     var unitPrice = parseNum(unitPriceInput.value);
+    ensureOrderDate();
     return {
+      orderDate: orderDateInput ? orderDateInput.value : getDateOnly(new Date()),
+      orderNo: ensureOrderNo(),
       mainRows: getMergedMainRows(),
       unitPrice: unitPrice,
       mainAmount: getMainAmount(areaTotal),
@@ -599,8 +613,8 @@ export function initShippingPage(options) {
     recalcOtherTileTotals();
     var snapshot = buildReportSnapshot();
     return {
-      orderDate: orderDateInput ? orderDateInput.value : getDateOnly(new Date()),
-      orderNo: orderNoInput ? orderNoInput.value.trim() : "",
+      orderDate: snapshot.orderDate,
+      orderNo: snapshot.orderNo,
       customerName: snapshot.customerName,
       tileColor: snapshot.tileColor,
       remark: snapshot.remark,
