@@ -8,6 +8,7 @@ import {
   setupPassword
 } from "./services/authService.js";
 import { loadConfig, saveConfig, subscribeConfigChange } from "./services/configService.js";
+import { geocodeDeliveryAddress, getAmapSettings, hasUsableAmapSettings, loadAmap } from "./services/amapService.js";
 import {
   buildExportPayload,
   clearOrders,
@@ -16,6 +17,7 @@ import {
   getDateOnly,
   getOrderStats,
   getOrderTrend,
+  getOrdersInTrendRange,
   importOrdersFromPayload,
   loadBackupMeta,
   loadOrders,
@@ -41,7 +43,6 @@ var appViewButtons = Array.prototype.slice.call(document.querySelectorAll("[data
 var businessViews = Array.prototype.slice.call(document.querySelectorAll(".business-view"));
 var shippingView = document.getElementById("shippingView");
 var adminView = document.getElementById("adminView");
-var adminToggle = document.getElementById("adminToggle");
 var adminTopToggle = document.getElementById("adminTopToggle");
 var logoutButton = document.getElementById("logoutButton");
 var backToShipping = document.getElementById("backToShipping");
@@ -61,6 +62,11 @@ var trendTotalCount = document.getElementById("trendTotalCount");
 var trendTotalAmount = document.getElementById("trendTotalAmount");
 var orderTrendChart = document.getElementById("orderTrendChart");
 var trendEmpty = document.getElementById("trendEmpty");
+var orderLocationMap = document.getElementById("orderLocationMap");
+var orderMapSubtitle = document.getElementById("orderMapSubtitle");
+var orderMapStatus = document.getElementById("orderMapStatus");
+var orderMapEmpty = document.getElementById("orderMapEmpty");
+var orderMapOrderList = document.getElementById("orderMapOrderList");
 var recentOrderList = document.getElementById("recentOrderList");
 var recentOrderEmpty = document.getElementById("recentOrderEmpty");
 
@@ -86,6 +92,14 @@ var dataLastExported = document.getElementById("dataLastExported");
 var dataLastImported = document.getElementById("dataLastImported");
 var dataStatusMessage = document.getElementById("dataStatusMessage");
 var activeTrendRange = "7d";
+var orderMapState = {
+  token: 0,
+  AMap: null,
+  map: null,
+  cluster: null,
+  infoWindow: null,
+  markers: []
+};
 
 function getConfig() {
   return currentConfig;
@@ -198,6 +212,241 @@ function setEmptyNote(el, visible) {
   el.classList.toggle("is-visible", Boolean(visible));
 }
 
+function setOrderMapStatus(text, mode) {
+  if (!orderMapStatus) return;
+  orderMapStatus.textContent = text || "";
+  orderMapStatus.className = "map-status-pill" + (mode ? " is-" + mode : "");
+}
+
+function setOrderMapEmpty(message, visible) {
+  if (!orderMapEmpty) return;
+  orderMapEmpty.textContent = message || "";
+  orderMapEmpty.hidden = !visible;
+  orderMapEmpty.classList.toggle("is-visible", Boolean(visible));
+}
+
+function getOrderLocation(order) {
+  var location = order && order.deliveryLocation;
+  var lng = Number(location && location.lng);
+  var lat = Number(location && location.lat);
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  return { lng: lng, lat: lat };
+}
+
+function getOrderAddress(order) {
+  return order && order.deliveryAddress ? order.deliveryAddress : "";
+}
+
+function formatCompletionMonth(value) {
+  var text = String(value || "").trim();
+  var match = /^(\d{4})-(\d{2})$/.exec(text);
+  if (!match) return "未填写";
+  return match[1] + "年" + Number(match[2]) + "月建成";
+}
+
+function getOrderDateTime(order) {
+  var time = Date.parse(order && order.orderDate || "");
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortOrdersByOrderDate(orders) {
+  return (Array.isArray(orders) ? orders : []).slice().sort(function (a, b) {
+    var dateDiff = getOrderDateTime(b) - getOrderDateTime(a);
+    if (dateDiff) return dateDiff;
+    return String(getOrderTitle(a)).localeCompare(String(getOrderTitle(b)), "zh-CN");
+  });
+}
+
+function renderOrderMapList(orders) {
+  if (!orderMapOrderList) return;
+  var sorted = sortOrdersByOrderDate(orders);
+  if (!sorted.length) {
+    orderMapOrderList.innerHTML = "<div class='map-order-empty'>当前范围内暂无订单信息。</div>";
+    return;
+  }
+  orderMapOrderList.innerHTML = sorted.map(function (order) {
+    var located = Boolean(getOrderLocation(order));
+    return "<article class='map-order-item'>" +
+      "<time>" + escapeHtml(order.orderDate || "未填写日期") + "</time>" +
+      "<div><strong>" + escapeHtml(getOrderTitle(order)) + "</strong><span>" + escapeHtml(getOrderCustomer(order)) + " · " + escapeHtml(formatCompletionMonth(order.completionMonth)) + "</span></div>" +
+      "<p>" + escapeHtml(getOrderAddress(order) || "未填写收货地址") + "</p>" +
+      "<em class='" + (located ? "is-ready" : "is-pending") + "'>" + (located ? "已定位" : "待定位") + "</em>" +
+      "</article>";
+  }).join("");
+}
+
+function clearOrderMapLayers() {
+  if (orderMapState.cluster) {
+    try {
+      if (typeof orderMapState.cluster.setMap === "function") orderMapState.cluster.setMap(null);
+      if (typeof orderMapState.cluster.clearMarkers === "function") orderMapState.cluster.clearMarkers();
+    } catch (error) {
+      console.warn("订单地图聚合层清理失败。", error);
+    }
+    orderMapState.cluster = null;
+  }
+  if (orderMapState.map && orderMapState.markers.length) {
+    try {
+      orderMapState.map.remove(orderMapState.markers);
+    } catch (error) {
+      console.warn("订单地图标记清理失败。", error);
+    }
+    orderMapState.markers = [];
+  }
+}
+
+function ensureOrderMap(AMap, settings) {
+  if (!orderLocationMap) return null;
+  if (!orderMapState.map) {
+    orderMapState.map = new AMap.Map(orderLocationMap, {
+      zoom: 10,
+      center: [118.67587, 24.874132],
+      viewMode: "2D",
+      mapStyle: settings.mapStyle
+    });
+  } else if (typeof orderMapState.map.setMapStyle === "function") {
+    orderMapState.map.setMapStyle(settings.mapStyle);
+  }
+  if (typeof orderMapState.map.setCity === "function") {
+    orderMapState.map.setCity(settings.geocodeCity || "泉州市");
+  }
+  return orderMapState.map;
+}
+
+function getOrderInfoHtml(order) {
+  return "<div class='order-map-info'>" +
+    "<strong>" + escapeHtml(getOrderTitle(order)) + "</strong>" +
+    "<p>" + escapeHtml(getOrderCustomer(order)) + " · " + escapeHtml(order.orderDate) + "</p>" +
+    "<dl>" +
+    "<div><dt>金额</dt><dd>" + formatMoney(order.totals.grandAmount) + " 元</dd></div>" +
+    "<div><dt>面积</dt><dd>" + formatArea(order.totals.areaTotal) + " ㎡</dd></div>" +
+    "<div><dt>建成</dt><dd>" + escapeHtml(formatCompletionMonth(order.completionMonth)) + "</dd></div>" +
+    "</dl>" +
+    "<p class='address'>" + escapeHtml(getOrderAddress(order) || "未填写收货地址") + "</p>" +
+    "</div>";
+}
+
+function openOrderInfo(order, lnglat) {
+  if (!orderMapState.AMap || !orderMapState.map) return;
+  if (!orderMapState.infoWindow) {
+    orderMapState.infoWindow = new orderMapState.AMap.InfoWindow({
+      offset: new orderMapState.AMap.Pixel(0, -28)
+    });
+  }
+  orderMapState.infoWindow.setContent(getOrderInfoHtml(order));
+  orderMapState.infoWindow.open(orderMapState.map, lnglat);
+}
+
+function createManualOrderMarkers(AMap, points) {
+  orderMapState.markers = points.map(function (point) {
+    var marker = new AMap.Marker({
+      position: point.lnglat,
+      content: "<button type='button' class='order-map-marker' aria-label='订单位置'>1</button>",
+      offset: new AMap.Pixel(-13, -13)
+    });
+    marker.on("click", function () {
+      openOrderInfo(point.order, point.lnglat);
+    });
+    return marker;
+  });
+  orderMapState.map.add(orderMapState.markers);
+}
+
+function renderOrderMapPoints(AMap, points) {
+  clearOrderMapLayers();
+  if (typeof AMap.MarkerCluster === "function") {
+    orderMapState.cluster = new AMap.MarkerCluster(orderMapState.map, points, {
+      gridSize: 72,
+      renderClusterMarker: function (context) {
+        context.marker.setContent("<button type='button' class='order-map-cluster' aria-label='订单聚合'>" + context.count + "</button>");
+      },
+      renderMarker: function (context) {
+        var data = Array.isArray(context.data) ? context.data[0] : context.data;
+        var order = data && data.order;
+        context.marker.setContent("<button type='button' class='order-map-marker' aria-label='订单位置'>1</button>");
+        if (order) {
+          context.marker.on("click", function () {
+            openOrderInfo(order, data.lnglat);
+          });
+        }
+      }
+    });
+  } else {
+    createManualOrderMarkers(AMap, points);
+  }
+
+  if (points.length === 1) {
+    orderMapState.map.setZoomAndCenter(11, points[0].lnglat);
+  } else {
+    orderMapState.map.setFitView();
+  }
+}
+
+function renderOrderMap(orders) {
+  if (!orderLocationMap) return;
+  var token = orderMapState.token + 1;
+  orderMapState.token = token;
+  var settings = getAmapSettings(currentConfig);
+  var rangeOrders = sortOrdersByOrderDate(getOrdersInTrendRange(orders, activeTrendRange, new Date()));
+  renderOrderMapList(rangeOrders);
+  var points = rangeOrders.map(function (order) {
+    var location = getOrderLocation(order);
+    if (!location) return null;
+    return {
+      lnglat: [location.lng, location.lat],
+      weight: Math.max(1, Math.round(Number(order.totals && order.totals.grandAmount) || 1)),
+      order: order,
+      orderId: order.id
+    };
+  }).filter(Boolean);
+  var pendingCount = rangeOrders.length - points.length;
+
+  if (orderMapSubtitle) {
+    orderMapSubtitle.textContent = "查看" + getTrendRangeLabel(activeTrendRange) + "内的订单位置：" + points.length + " 个定位点，" + pendingCount + " 个待定位。";
+  }
+
+  if (!settings.enabled) {
+    clearOrderMapLayers();
+    setOrderMapStatus("未启用", "idle");
+    setOrderMapEmpty("请在系统管理中启用首页订单地图。", true);
+    return;
+  }
+  if (!settings.amapKey || !settings.securityJsCode) {
+    clearOrderMapLayers();
+    setOrderMapStatus("待配置", "warning");
+    setOrderMapEmpty("请在系统管理中填写高德 JS API Key 和 securityJsCode。", true);
+    return;
+  }
+  if (!rangeOrders.length) {
+    clearOrderMapLayers();
+    setOrderMapStatus("无订单", "idle");
+    setOrderMapEmpty("当前时间范围内暂无订单。", true);
+    return;
+  }
+  if (!points.length) {
+    clearOrderMapLayers();
+    setOrderMapStatus("待定位", "warning");
+    setOrderMapEmpty("当前范围内的订单还没有可用坐标。请在订单中填写收货地址后重新保存。", true);
+    return;
+  }
+
+  setOrderMapStatus("加载中", "loading");
+  setOrderMapEmpty("地图加载中...", true);
+  loadAmap(currentConfig, ["AMap.MarkerCluster"]).then(function (AMap) {
+    if (token !== orderMapState.token) return;
+    orderMapState.AMap = AMap;
+    ensureOrderMap(AMap, settings);
+    renderOrderMapPoints(AMap, points);
+    setOrderMapStatus("已显示", "ready");
+    setOrderMapEmpty("", false);
+  }).catch(function (error) {
+    if (token !== orderMapState.token) return;
+    clearOrderMapLayers();
+    setOrderMapStatus("加载失败", "error");
+    setOrderMapEmpty(error.message || "高德地图加载失败，请检查 Key、网络或安全配置。", true);
+  });
+}
+
 function hasDraftContent(draft) {
   var items = draft && draft.items ? draft.items : {};
   return Boolean(
@@ -274,10 +523,11 @@ function renderDashboard() {
   totalOrderAmount.textContent = formatMoney(stats.totalAmount);
   totalOrderArea.textContent = formatArea(stats.totalArea);
   renderTrend(orders);
+  renderOrderMap(orders);
   setEmptyNote(recentOrderEmpty, stats.recentOrders.length === 0);
   recentOrderList.innerHTML = stats.recentOrders.map(function (order) {
     return "<article class='order-card'>" +
-      "<div><strong>" + escapeHtml(getOrderTitle(order)) + "</strong><span>" + escapeHtml(getOrderCustomer(order)) + " · " + escapeHtml(order.orderDate) + "</span></div>" +
+      "<div><strong>" + escapeHtml(getOrderTitle(order)) + "</strong><span>" + escapeHtml(getOrderCustomer(order)) + " · " + escapeHtml(order.orderDate) + " · " + escapeHtml(formatCompletionMonth(order.completionMonth)) + "</span></div>" +
       "<div class='order-card-metrics'><span>" + formatMoney(order.totals.grandAmount) + " 元</span><span>" + formatArea(order.totals.areaTotal) + " ㎡</span></div>" +
       "</article>";
   }).join("");
@@ -335,6 +585,8 @@ function renderRecordDetail(order, mode) {
       "<label class='field'><span>订单编号</span><input name='orderNo' type='text' value='" + escapeHtml(order.orderNo) + "' /></label>" +
       "<label class='field'><span>客户名称</span><input name='customerName' type='text' value='" + escapeHtml(order.customerName) + "' /></label>" +
       "<label class='field'><span>颜色</span><input name='tileColor' type='text' value='" + escapeHtml(order.tileColor) + "' /></label>" +
+      "<label class='field span-2'><span>收货地址</span><input name='deliveryAddress' type='text' value='" + escapeHtml(order.deliveryAddress) + "' /></label>" +
+      "<label class='field'><span>建成年月</span><input name='completionMonth' type='month' value='" + escapeHtml(order.completionMonth) + "' /></label>" +
       "<label class='field span-2'><span>备注</span><input name='remark' type='text' value='" + escapeHtml(order.remark) + "' /></label>" +
       "<label class='field'><span>总面积</span><input name='areaTotal' type='number' step='0.0001' value='" + escapeHtml(order.totals.areaTotal) + "' /></label>" +
       "<label class='field'><span>主瓦金额</span><input name='mainAmount' type='number' step='0.01' value='" + escapeHtml(order.totals.mainAmount) + "' /></label>" +
@@ -354,6 +606,9 @@ function renderRecordDetail(order, mode) {
     "<div><span>颜色</span><strong>" + escapeHtml(order.tileColor || "未填写") + "</strong></div>" +
     "<div><span>金额</span><strong>" + formatMoney(order.totals.grandAmount) + " 元</strong></div>" +
     "<div><span>面积</span><strong>" + formatArea(order.totals.areaTotal) + " ㎡</strong></div>" +
+    "<div><span>收货地址</span><strong>" + escapeHtml(order.deliveryAddress || "未填写") + "</strong></div>" +
+    "<div><span>建成年月</span><strong>" + escapeHtml(formatCompletionMonth(order.completionMonth)) + "</strong></div>" +
+    "<div><span>地图定位</span><strong>" + (getOrderLocation(order) ? "已定位" : "待定位") + "</strong></div>" +
     "</div>" +
     (order.remark ? "<p class='detail-remark'>" + escapeHtml(order.remark) + "</p>" : "") +
     renderItemSection("主瓦", ["长度", "实装节数", "数量", "面积"], items.mainRows, function (row) {
@@ -394,6 +649,73 @@ function removeOrder(orderId) {
   renderAll();
 }
 
+function isSameDeliveryAddress(order, previousOrder) {
+  return String(order && order.deliveryAddress || "").trim() === String(previousOrder && previousOrder.deliveryAddress || "").trim();
+}
+
+function withTimeout(promise, milliseconds, message) {
+  return new Promise(function (resolve, reject) {
+    var timer = setTimeout(function () {
+      reject(new Error(message || "操作超时。"));
+    }, milliseconds);
+    promise.then(function (value) {
+      clearTimeout(timer);
+      resolve(value);
+    }).catch(function (error) {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function resolveOrderLocation(order, previousOrder) {
+  var address = String(order && order.deliveryAddress || "").trim();
+  if (!address) {
+    return Promise.resolve({
+      order: normalizeOrder(Object.assign({}, order, { deliveryLocation: null })),
+      warning: ""
+    });
+  }
+  if (previousOrder && previousOrder.deliveryLocation && isSameDeliveryAddress(order, previousOrder)) {
+    return Promise.resolve({
+      order: normalizeOrder(Object.assign({}, order, { deliveryLocation: previousOrder.deliveryLocation })),
+      warning: ""
+    });
+  }
+  var settings = getAmapSettings(currentConfig);
+  if (!settings.enabled) {
+    return Promise.resolve({
+      order: normalizeOrder(Object.assign({}, order, { deliveryLocation: null })),
+      warning: ""
+    });
+  }
+  if (!hasUsableAmapSettings(currentConfig)) {
+    return Promise.resolve({
+      order: normalizeOrder(Object.assign({}, order, { deliveryLocation: null })),
+      warning: "地图配置不完整，订单已保存但地图暂无定位。"
+    });
+  }
+  return withTimeout(geocodeDeliveryAddress(address, currentConfig), 8000, "收货地址解析超时。").then(function (location) {
+    return {
+      order: normalizeOrder(Object.assign({}, order, { deliveryLocation: location })),
+      warning: ""
+    };
+  }).catch(function (error) {
+    return {
+      order: normalizeOrder(Object.assign({}, order, { deliveryLocation: null })),
+      warning: (error.message || "收货地址解析失败。") + "订单已保存但地图暂无定位。"
+    };
+  });
+}
+
+function setOrderSaveBusy(busy) {
+  [saveOrderBtn, saveOrderSideBtn].forEach(function (button) {
+    if (!button) return;
+    button.disabled = Boolean(busy);
+    button.classList.toggle("is-loading", Boolean(busy));
+  });
+}
+
 function saveRecordEdit(form) {
   var order = findOrder(form.getAttribute("data-order-id"));
   if (!order) return;
@@ -402,6 +724,8 @@ function saveRecordEdit(form) {
     orderNo: form.elements.orderNo.value,
     customerName: form.elements.customerName.value,
     tileColor: form.elements.tileColor.value,
+    deliveryAddress: form.elements.deliveryAddress.value,
+    completionMonth: form.elements.completionMonth.value,
     remark: form.elements.remark.value,
     totals: {
       areaTotal: parseNum(form.elements.areaTotal.value),
@@ -411,9 +735,12 @@ function saveRecordEdit(form) {
       otherTileAmount: parseNum(form.elements.otherTileAmount.value)
     }
   }));
-  upsertOrder(updated);
-  renderAll();
-  openRecord(updated.id, "view");
+  resolveOrderLocation(updated, order).then(function (result) {
+    var saved = upsertOrder(result.order);
+    renderAll();
+    openRecord(saved.id, "view");
+    if (result.warning) window.alert(result.warning);
+  });
 }
 
 function renderDataStatus() {
@@ -449,11 +776,16 @@ function saveCurrentOrder() {
     createdAt: now.toISOString(),
     updatedAt: now.toISOString()
   }));
-  var saved = upsertOrder(order);
-  var orderNoInput = document.getElementById("orderNo");
-  if (orderNoInput) orderNoInput.value = saved.orderNo;
-  renderAll();
-  window.alert("订单 " + saved.orderNo + " 已保存。");
+  setOrderSaveBusy(true);
+  resolveOrderLocation(order, null).then(function (result) {
+    var saved = upsertOrder(result.order);
+    var orderNoInput = document.getElementById("orderNo");
+    if (orderNoInput) orderNoInput.value = saved.orderNo;
+    renderAll();
+    window.alert("订单 " + saved.orderNo + " 已保存。" + (result.warning ? "\n" + result.warning : ""));
+  }).finally(function () {
+    setOrderSaveBusy(false);
+  });
 }
 
 function downloadTextFile(fileName, content, mimeType) {
@@ -534,7 +866,6 @@ authForm.addEventListener("submit", function (event) {
     });
 });
 
-if (adminToggle) adminToggle.addEventListener("click", function () { showView("adminView"); });
 if (adminTopToggle) adminTopToggle.addEventListener("click", function () { showView("adminView"); });
 logoutButton.addEventListener("click", function () {
   logout();
@@ -610,6 +941,7 @@ importDataFile.addEventListener("change", function (event) {
 subscribeConfigChange(function (nextConfig) {
   currentConfig = nextConfig;
   shippingPage.applyConfig(currentConfig);
+  if (isAuthenticated()) renderDashboard();
 });
 
 if (isAuthenticated()) {

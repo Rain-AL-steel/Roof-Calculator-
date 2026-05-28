@@ -147,6 +147,13 @@ function renderAdmin(draft) {
     "<label class='field span-3'><span>电话</span><input data-field='basics.phone' type='text' value='" + escapeHtml(draft.basics.phone) + "' /></label>" +
     "<div class='field span-3'><span>默认 Logo</span><div class='admin-logo-row'>" + renderLogoPreview(draft) + "<input id='adminLogoUpload' type='file' accept='image/*' /><button type='button' class='btn btn-neutral' id='adminClearLogo'>清除 Logo</button></div></div>" +
     "</div></section>" +
+    "<section class='admin-section'><div class='admin-section-head'><h3>地图设置</h3></div><div class='admin-form-grid'>" +
+    "<div class='field'><span>首页订单地图</span><label class='admin-switch'><input data-field='mapSettings.enabled' type='checkbox'" + (draft.mapSettings.enabled ? " checked" : "") + " /><span>启用</span></label></div>" +
+    "<label class='field'><span>高德 JS API Key</span><input data-field='mapSettings.amapKey' type='text' value='" + escapeHtml(draft.mapSettings.amapKey) + "' autocomplete='off' /></label>" +
+    "<label class='field'><span>安全密钥 securityJsCode</span><input data-field='mapSettings.securityJsCode' type='text' value='" + escapeHtml(draft.mapSettings.securityJsCode) + "' autocomplete='off' /></label>" +
+    "<label class='field'><span>默认解析城市 / adcode</span><input data-field='mapSettings.geocodeCity' type='text' value='" + escapeHtml(draft.mapSettings.geocodeCity) + "' placeholder='留空按全国解析' /></label>" +
+    "<label class='field span-2'><span>地图样式</span><input data-field='mapSettings.mapStyle' type='text' value='" + escapeHtml(draft.mapSettings.mapStyle) + "' placeholder='amap://styles/whitesmoke' /></label>" +
+    "</div></section>" +
     renderOptionSection(draft, "可选节长", "basics.segmentLengths", "节长", true) +
     renderOptionSection(draft, "默认颜色选项", "basics.colorOptions", "颜色", false) +
     renderOptionSection(draft, "单位选项", "unitOptions", "单位", false) +

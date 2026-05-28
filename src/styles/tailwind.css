@@ -759,6 +759,14 @@
     @apply grid gap-3;
   }
 
+  .trend-insight-grid {
+    @apply grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-stretch;
+  }
+
+  .trend-chart-column {
+    @apply grid min-w-0 gap-3;
+  }
+
   .range-switch {
     @apply grid grid-cols-3 gap-1 rounded-xl border border-app-line bg-app-surface-soft p-1;
   }
@@ -864,6 +872,147 @@
 
   .trend-chart-wrap .empty-note {
     @apply absolute left-4 right-4 top-1/2 -translate-y-1/2 bg-white/95;
+  }
+
+  .order-map-card {
+    @apply grid min-w-0 gap-3 rounded-app-lg border border-app-line bg-app-surface-soft p-3;
+  }
+
+  .map-panel-head {
+    @apply flex flex-wrap items-start justify-between gap-3;
+  }
+
+  .map-panel-head h3 {
+    @apply m-0 text-[1.02rem] font-black leading-[1.1] tracking-[-0.01em];
+  }
+
+  .map-panel-head .subtext {
+    @apply mb-0 mt-1 text-[0.82rem] font-extrabold leading-[1.4] text-app-muted;
+  }
+
+  .map-status-pill {
+    @apply inline-flex min-h-8 items-center rounded-[10px] border border-app-line bg-white px-2.5 py-1 text-[0.76rem] font-black text-app-muted;
+  }
+
+  .map-status-pill.is-ready {
+    @apply border-app-primary/30 bg-white text-app-primary;
+  }
+
+  .map-status-pill.is-warning,
+  .map-status-pill.is-loading {
+    @apply border-app-accent/30 bg-white text-app-accent;
+  }
+
+  .map-status-pill.is-error {
+    @apply border-app-danger/30 bg-white text-app-danger;
+  }
+
+  .order-map-wrap {
+    @apply relative min-h-[320px] overflow-hidden rounded-app-lg border border-app-line bg-white;
+  }
+
+  .order-map {
+    @apply h-[320px] w-full;
+  }
+
+  .map-empty-state {
+    @apply pointer-events-none absolute inset-x-4 top-1/2 hidden -translate-y-1/2 rounded-app border border-app-line bg-white/95 px-4 py-3 text-center text-[0.86rem] font-extrabold leading-[1.45] text-app-muted;
+    box-shadow: 0 16px 38px rgba(89, 56, 19, 0.08);
+  }
+
+  .map-empty-state.is-visible {
+    @apply block;
+  }
+
+  .map-order-list {
+    @apply grid max-h-[210px] gap-2 overflow-y-auto pr-1;
+  }
+
+  .map-order-empty {
+    @apply rounded-app border border-app-line bg-white px-3 py-2.5 text-[0.82rem] font-extrabold text-app-muted;
+  }
+
+  .map-order-item {
+    @apply grid grid-cols-[86px_minmax(0,1fr)_auto] items-start gap-2 rounded-app border border-app-line bg-white p-2.5;
+  }
+
+  .map-order-item time {
+    @apply rounded-[9px] border border-app-line bg-app-surface-soft px-2 py-1 text-center font-mono text-[0.72rem] font-black text-app-text;
+  }
+
+  .map-order-item strong {
+    @apply block text-[0.86rem] font-black leading-[1.15] text-app-text;
+  }
+
+  .map-order-item span,
+  .map-order-item p {
+    @apply m-0 mt-1 text-[0.76rem] font-extrabold leading-[1.35] text-app-muted;
+  }
+
+  .map-order-item p {
+    @apply col-span-full md:col-start-2 md:col-end-4;
+  }
+
+  .map-order-item em {
+    @apply rounded-[9px] border px-2 py-1 text-[0.72rem] not-italic font-black;
+  }
+
+  .map-order-item em.is-ready {
+    @apply border-app-primary/30 text-app-primary;
+  }
+
+  .map-order-item em.is-pending {
+    @apply border-app-accent/30 text-app-accent;
+  }
+
+  .order-map-marker,
+  .order-map-cluster {
+    @apply inline-flex items-center justify-center rounded-full border-2 border-white bg-app-primary font-mono font-black text-white shadow-app-soft transition duration-200 ease-app-out;
+  }
+
+  .order-map-marker {
+    @apply size-[26px] text-[0.72rem];
+  }
+
+  .order-map-cluster {
+    @apply min-h-9 min-w-9 px-2 text-[0.82rem];
+  }
+
+  .order-map-marker:hover,
+  .order-map-cluster:hover {
+    @apply -translate-y-px bg-app-primary-dark;
+  }
+
+  .order-map-info {
+    @apply min-w-[220px] max-w-[280px] p-1 text-app-text;
+  }
+
+  .order-map-info strong {
+    @apply block text-[0.98rem] font-black;
+  }
+
+  .order-map-info p {
+    @apply m-0 mt-1 text-[0.78rem] font-extrabold text-app-muted;
+  }
+
+  .order-map-info dl {
+    @apply my-2 grid grid-cols-2 gap-2;
+  }
+
+  .order-map-info dl div {
+    @apply rounded-[10px] border border-app-line bg-app-surface-soft px-2 py-1.5;
+  }
+
+  .order-map-info dt {
+    @apply text-[0.68rem] font-black text-app-muted;
+  }
+
+  .order-map-info dd {
+    @apply m-0 font-mono text-[0.82rem] font-black text-app-text;
+  }
+
+  .order-map-info .address {
+    @apply text-app-text;
   }
 
   .history-filters {

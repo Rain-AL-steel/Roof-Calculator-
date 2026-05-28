@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   buildExportPayload,
+  getOrdersInTrendRange,
   getOrderTrend,
   getOrderStats,
   importOrdersFromPayload,
@@ -36,6 +37,9 @@ function makeOrder(id, orderDate, amount) {
     createdAt: orderDate + "T08:00:00.000Z",
     orderDate: orderDate,
     customerName: "测试客户",
+    deliveryAddress: "福建省泉州市惠安县洛阳大道509号",
+    deliveryLocation: { lng: 118.682, lat: 24.93, formattedAddress: "洛阳大道509号" },
+    completionMonth: "2026-06",
     totals: {
       areaTotal: 12.5,
       mainAmount: amount,
@@ -66,7 +70,25 @@ describe("order service", function () {
     expect(order.orderNo).toBe("ORD-a");
     expect(order.totals.areaTotal).toBe(12.5);
     expect(order.totals.grandAmount).toBe(110);
+    expect(order.deliveryAddress).toBe("福建省泉州市惠安县洛阳大道509号");
+    expect(order.deliveryLocation.lng).toBe(118.682);
+    expect(order.completionMonth).toBe("2026-06");
     expect(order.items.mainRows).toHaveLength(1);
+  });
+
+  it("normalizes completion month values", function () {
+    expect(normalizeOrder({ completionMonth: "2026/7" }).completionMonth).toBe("2026-07");
+    expect(normalizeOrder({ completionMonth: "2026-13" }).completionMonth).toBe("");
+  });
+
+  it("drops invalid delivery locations while preserving addresses", function () {
+    var order = normalizeOrder({
+      orderDate: "2026-05-26",
+      deliveryAddress: "只填写地址",
+      deliveryLocation: { lng: "abc", lat: 24.93 }
+    });
+    expect(order.deliveryAddress).toBe("只填写地址");
+    expect(order.deliveryLocation).toBeNull();
   });
 
   it("persists orders and returns dashboard stats", function () {
@@ -94,6 +116,18 @@ describe("order service", function () {
     expect(trend7.totalAmount).toBe(160);
     expect(trend30.points).toHaveLength(30);
     expect(trend30.totalCount).toBe(3);
+  });
+
+  it("filters orders with the same date windows used by dashboard trend ranges", function () {
+    var orders = [
+      makeOrder("a", "2026-05-26", 100),
+      makeOrder("b", "2026-05-20", 40),
+      makeOrder("c", "2026-04-30", 20)
+    ];
+    var range7 = getOrdersInTrendRange(orders, "7d", new Date(2026, 4, 26));
+    var range30 = getOrdersInTrendRange(orders, "30d", new Date(2026, 4, 26));
+    expect(range7.map(function (order) { return order.id; })).toEqual(["a", "b"]);
+    expect(range30.map(function (order) { return order.id; })).toEqual(["a", "b", "c"]);
   });
 
   it("builds monthly trend buckets for one year", function () {

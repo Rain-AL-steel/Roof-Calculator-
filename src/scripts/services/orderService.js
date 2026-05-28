@@ -72,9 +72,42 @@ function compactText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function normalizeMonthString(value) {
+  var text = compactText(value).replace(/\//g, "-");
+  var match = /^(\d{4})-(\d{1,2})$/.exec(text);
+  if (!match) return "";
+  var month = Number(match[2]);
+  if (month < 1 || month > 12) return "";
+  return match[1] + "-" + String(month).padStart(2, "0");
+}
+
 function finiteNumber(value, fallback) {
   var number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function finiteCoordinate(value) {
+  var number = Number(value);
+  return Number.isFinite(number) ? number : NaN;
+}
+
+function normalizeDeliveryLocation(location) {
+  if (!location) return null;
+  var source = Array.isArray(location) ? { lng: location[0], lat: location[1] } : location;
+  var lng = finiteCoordinate(source.lng !== undefined ? source.lng : source.longitude);
+  var lat = finiteCoordinate(source.lat !== undefined ? source.lat : source.latitude);
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  return {
+    lng: lng,
+    lat: lat,
+    address: compactText(source.address),
+    formattedAddress: compactText(source.formattedAddress),
+    province: compactText(source.province),
+    city: compactText(source.city),
+    district: compactText(source.district),
+    adcode: compactText(source.adcode),
+    geocodedAt: compactText(source.geocodedAt)
+  };
 }
 
 function normalizeMainRows(rows) {
@@ -153,6 +186,9 @@ export function normalizeOrder(input) {
     customerName: compactText(source.customerName),
     tileColor: compactText(source.tileColor),
     remark: compactText(source.remark),
+    deliveryAddress: compactText(source.deliveryAddress),
+    completionMonth: normalizeMonthString(source.completionMonth),
+    deliveryLocation: normalizeDeliveryLocation(source.deliveryLocation),
     totals: {
       areaTotal: areaTotal,
       mainAmount: mainAmount,
@@ -306,6 +342,20 @@ export function getOrderTrend(orders, rangeKey, baseDate) {
     maxCount: Math.max(0, Math.max.apply(null, points.map(function (point) { return point.count; }))),
     maxAmount: Math.max(0, Math.max.apply(null, points.map(function (point) { return point.amount; })))
   };
+}
+
+export function getOrdersInTrendRange(orders, rangeKey, baseDate) {
+  var list = Array.isArray(orders) ? orders : [];
+  var trend = getOrderTrend([], rangeKey, baseDate);
+  var keys = {};
+  trend.points.forEach(function (point) {
+    keys[point.key] = true;
+  });
+  return list.filter(function (order) {
+    var orderDate = createLocalDate(order && order.orderDate);
+    var key = trend.bucketType === "month" ? getMonthKey(orderDate) : compactText(order && order.orderDate);
+    return Boolean(keys[key]);
+  });
 }
 
 export function buildExportPayload(orders, settings, meta) {

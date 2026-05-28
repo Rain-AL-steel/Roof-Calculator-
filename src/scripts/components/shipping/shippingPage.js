@@ -57,6 +57,8 @@ export function initShippingPage(options) {
   var orderNoInput = document.getElementById("orderNo");
   var customerNameInput = document.getElementById("customerName");
   var tileColorInput = document.getElementById("tileColor");
+  var deliveryAddressInput = document.getElementById("deliveryAddress");
+  var completionMonthInput = document.getElementById("completionMonth");
   var orderRemarkInput = document.getElementById("orderRemark");
   var tileColorOptions = document.getElementById("tileColorOptions");
   var unitOptions = document.getElementById("unitOptions");
@@ -601,6 +603,8 @@ export function initShippingPage(options) {
       otherTiles: getOtherTileRowsData(),
       customerName: customerNameInput.value.trim(),
       tileColor: tileColorInput.value.trim(),
+      deliveryAddress: deliveryAddressInput ? deliveryAddressInput.value.trim() : "",
+      completionMonth: completionMonthInput ? completionMonthInput.value.trim() : "",
       remark: orderRemarkInput ? orderRemarkInput.value.trim() : "",
       logoDataUrl: reportLogoDataUrl
     };
@@ -617,6 +621,8 @@ export function initShippingPage(options) {
       orderNo: snapshot.orderNo,
       customerName: snapshot.customerName,
       tileColor: snapshot.tileColor,
+      deliveryAddress: snapshot.deliveryAddress,
+      completionMonth: snapshot.completionMonth,
       remark: snapshot.remark,
       totals: {
         areaTotal: totals.area,

@@ -203,17 +203,35 @@
             <button type="button" class="range-btn" data-trend-range="1y">一年</button>
           </div>
         </div>
-        <div class="trend-stats">
-          <div><span>范围内订单数</span><strong id="trendTotalCount">0</strong></div>
-          <div><span>范围内订单金额</span><strong id="trendTotalAmount">0.00</strong></div>
-        </div>
-        <div class="trend-legend" aria-label="图例">
-          <span><i class="legend-dot count"></i>订单数量</span>
-          <span><i class="legend-dot amount"></i>订单金额</span>
-        </div>
-        <div class="trend-chart-wrap">
-          <svg id="orderTrendChart" class="trend-chart" viewBox="0 0 920 320" role="img" aria-label="订单趋势折线图"></svg>
-          <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
+        <div class="trend-insight-grid">
+          <div class="trend-chart-column">
+            <div class="trend-stats">
+              <div><span>范围内订单数</span><strong id="trendTotalCount">0</strong></div>
+              <div><span>范围内订单金额</span><strong id="trendTotalAmount">0.00</strong></div>
+            </div>
+            <div class="trend-legend" aria-label="图例">
+              <span><i class="legend-dot count"></i>订单数量</span>
+              <span><i class="legend-dot amount"></i>订单金额</span>
+            </div>
+            <div class="trend-chart-wrap">
+              <svg id="orderTrendChart" class="trend-chart" viewBox="0 0 920 320" role="img" aria-label="订单趋势折线图"></svg>
+              <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
+            </div>
+          </div>
+          <section class="order-map-card" aria-label="订单位置地图">
+            <div class="map-panel-head">
+              <div>
+                <h3>订单地图</h3>
+                <p class="subtext" id="orderMapSubtitle">地图跟随趋势时间范围显示出货订单。</p>
+              </div>
+              <span class="map-status-pill" id="orderMapStatus">待配置</span>
+            </div>
+            <div class="order-map-wrap">
+              <div id="orderLocationMap" class="order-map" role="img" aria-label="出货订单位置地图"></div>
+              <div class="map-empty-state" id="orderMapEmpty">请在系统管理中启用地图并填写高德 Key。</div>
+            </div>
+            <div class="map-order-list" id="orderMapOrderList" aria-label="地图订单信息"></div>
+          </section>
         </div>
       </section>
 
@@ -272,6 +290,14 @@
           <label for="tileColor">颜色</label>
           <input id="tileColor" type="text" list="tileColorOptions" autocomplete="off" />
           <datalist id="tileColorOptions"></datalist>
+        </div>
+        <div class="field span-3">
+          <label for="deliveryAddress">收货地址</label>
+          <input id="deliveryAddress" type="text" autocomplete="off" placeholder="用于首页地图定位，请尽量填写省市区和详细地址" />
+        </div>
+        <div class="field">
+          <label for="completionMonth">建成年月</label>
+          <input id="completionMonth" type="month" />
         </div>
         <div class="field span-2">
           <label for="orderRemark">备注</label>

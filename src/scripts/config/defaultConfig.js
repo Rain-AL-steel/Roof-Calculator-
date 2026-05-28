@@ -36,6 +36,13 @@ export const defaultConfig = {
     phone: "0595-27555859 / 15060629003",
     defaultLogo: ""
   },
+  mapSettings: {
+    enabled: false,
+    amapKey: "",
+    securityJsCode: "",
+    geocodeCity: "泉州市",
+    mapStyle: "amap://styles/whitesmoke"
+  },
   unitOptions: [
     option("unit-piece", "片", 10),
     option("unit-meter", "米", 20),

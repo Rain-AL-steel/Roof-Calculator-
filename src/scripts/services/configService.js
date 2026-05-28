@@ -65,10 +65,16 @@ function mergeString(source, fallback) {
   return source !== undefined && source !== null ? String(source) : String(fallback || "");
 }
 
+function mergeNonEmptyString(source, fallback) {
+  var text = source !== undefined && source !== null ? String(source) : "";
+  return text.trim() ? text : String(fallback || "");
+}
+
 export function normalizeConfig(rawConfig) {
   var source = isPlainObject(rawConfig) ? rawConfig : {};
   var fallback = defaultConfig;
   var basics = isPlainObject(source.basics) ? source.basics : {};
+  var mapSettings = isPlainObject(source.mapSettings) ? source.mapSettings : {};
   var steel = isPlainObject(source.steel) ? source.steel : {};
   var reportTemplate = isPlainObject(source.reportTemplate) ? source.reportTemplate : {};
 
@@ -84,6 +90,13 @@ export function normalizeConfig(rawConfig) {
       address: mergeString(basics.address, fallback.basics.address),
       phone: mergeString(basics.phone, fallback.basics.phone),
       defaultLogo: mergeString(basics.defaultLogo, fallback.basics.defaultLogo)
+    },
+    mapSettings: {
+      enabled: mapSettings.enabled !== undefined ? Boolean(mapSettings.enabled) : Boolean(fallback.mapSettings.enabled),
+      amapKey: mergeNonEmptyString(mapSettings.amapKey, fallback.mapSettings.amapKey),
+      securityJsCode: mergeNonEmptyString(mapSettings.securityJsCode, fallback.mapSettings.securityJsCode),
+      geocodeCity: mergeNonEmptyString(mapSettings.geocodeCity, fallback.mapSettings.geocodeCity),
+      mapStyle: mergeNonEmptyString(mapSettings.mapStyle, fallback.mapSettings.mapStyle)
     },
     unitOptions: normalizeOptions(source.unitOptions, fallback.unitOptions, "unit"),
     accessories: normalizeCatalog(source.accessories, fallback.accessories, "acc", { common: true }).map(function (item) {
