@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="树脂瓦出货单" />
+  <meta name="apple-mobile-web-app-title" content="ERP计算器" />
   <meta name="description" content="树脂瓦、配件、钢铁材料和其他瓦的静态出货计算与打印工具。" />
-  <meta name="theme-color" content="#f4f6f0" />
-  <title>树脂瓦出货计算单</title>
+  <meta name="theme-color" content="#fff8ef" />
+  <title>ERP计算器</title>
     <link rel="stylesheet" href="./src/styles/main.css" />
 </head>
 <body>
@@ -133,9 +133,12 @@
 
     <header class="workspace-header" id="workspaceHeader" hidden>
       <div class="workspace-title">
-        <div>
-          <p class="eyebrow">v2.0 本地订单工具</p>
-          <h1>简易订单与出货打单工具</h1>
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true"><svg class="ui-icon"><use href="#icon-layers"></use></svg></div>
+          <div>
+            <p class="eyebrow">v2.0 本地订单工具</p>
+            <h1>ERP计算器</h1>
+          </div>
         </div>
         <div class="workspace-controls">
           <button type="button" class="btn btn-neutral" id="adminTopToggle"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg><span>系统管理</span></button>
@@ -231,13 +234,12 @@
     <header class="app-header">
       <div class="title-row">
         <div class="title-block">
-          <h1>树脂瓦出货计算单</h1>
+          <h1>订单基础信息</h1>
           <p>主瓦、配件、钢铁材料和特殊瓦统一核算</p>
         </div>
         <div class="quick-facts" aria-label="固定参数">
           <span class="fact" id="fixedWidthFact">宽度 — m</span>
           <span class="fact" id="defaultSegmentFact">默认节长 — m</span>
-          <button type="button" class="btn btn-neutral" id="adminToggle"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg><span>系统管理</span></button>
         </div>
       </div>
 
