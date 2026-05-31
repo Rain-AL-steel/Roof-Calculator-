@@ -1,0 +1,274 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProductCategory {
+  ACCESSORY
+  STEEL
+  OTHER_TILE
+}
+
+enum ProductOptionGroup {
+  UNIT
+  COLOR
+  SEGMENT_LENGTH
+  TUBE_SPEC
+  THICKNESS
+  BOLT_SPEC
+}
+
+enum OrderLineType {
+  ACCESSORY
+  STEEL
+  OTHER_TILE
+}
+
+enum MapProvider {
+  AMAP
+}
+
+enum MapLocationStatus {
+  RESOLVED
+  FAILED
+}
+
+model User {
+  id             String    @id @default(cuid())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  username       String    @unique
+  displayName    String?
+  passwordHash   String
+  passwordSalt   String?
+  hashAlgorithm  String    @default("PBKDF2-SHA256")
+  hashIterations Int?
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+
+  roles          UserRole[]
+  createdOrders  Order[]   @relation("OrderCreatedBy")
+  updatedOrders  Order[]   @relation("OrderUpdatedBy")
+  auditLogs      AuditLog[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String     @id @default(cuid())
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  code        String     @unique
+  name        String
+  description String?
+
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    String
+  roleId    String
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model Order {
+  id                 String            @id @default(cuid())
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  orderNo            String            @unique
+  clientOrderId      String?           @unique
+  orderDate          DateTime          @db.Date
+  customerName       String?
+  tileColor          String?
+  remark             String?
+
+  deliveryAddress    String?
+  completionMonth    String?           @db.VarChar(7)
+
+  areaTotal          Decimal           @default(0) @db.Decimal(14, 4)
+  mainAmount         Decimal           @default(0) @db.Decimal(14, 2)
+  accessoryAmount    Decimal           @default(0) @db.Decimal(14, 2)
+  steelAmount        Decimal           @default(0) @db.Decimal(14, 2)
+  otherTileAmount    Decimal           @default(0) @db.Decimal(14, 2)
+  grandAmount        Decimal           @default(0) @db.Decimal(14, 2)
+
+  mapLocationCacheId String?
+  createdById        String?
+  updatedById        String?
+
+  mapLocationCache   MapLocationCache? @relation(fields: [mapLocationCacheId], references: [id])
+  createdBy          User?             @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  updatedBy          User?             @relation("OrderUpdatedBy", fields: [updatedById], references: [id])
+
+  mainRows           OrderMainRow[]
+  lineItems          OrderLineItem[]
+
+  @@index([orderDate])
+  @@index([customerName])
+  @@index([mapLocationCacheId])
+  @@map("orders")
+}
+
+model OrderMainRow {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderId     String
+  sort        Int      @default(0)
+
+  lengthsText String?
+  totalQty    Decimal  @default(0) @db.Decimal(14, 4)
+  actual      Decimal  @default(0) @db.Decimal(14, 4)
+  area        Decimal  @default(0) @db.Decimal(14, 4)
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_main_rows")
+}
+
+model OrderLineItem {
+  id           String        @id @default(cuid())
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  orderId      String
+  productId    String?
+  type         OrderLineType
+  sort         Int           @default(0)
+
+  nameSnapshot String
+  unitSnapshot String?
+  qty          Decimal       @default(0) @db.Decimal(14, 4)
+  length       Decimal?      @db.Decimal(14, 4)
+  price        Decimal       @default(0) @db.Decimal(14, 2)
+  subtotal     Decimal       @default(0) @db.Decimal(14, 2)
+
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product      Product?      @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_line_items")
+}
+
+model Product {
+  id           String          @id @default(cuid())
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  category     ProductCategory
+  name         String
+  defaultUnit  String
+  defaultPrice Decimal?        @db.Decimal(14, 2)
+  spec         String?
+  common       Boolean?
+  sort         Int             @default(0)
+  enabled      Boolean         @default(true)
+
+  lineItems    OrderLineItem[]
+
+  @@index([category])
+  @@map("products")
+}
+
+model ProductOption {
+  id           String             @id @default(cuid())
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  group        ProductOptionGroup
+  value        String
+  numericValue Decimal?           @db.Decimal(14, 4)
+  sort         Int                @default(0)
+  enabled      Boolean            @default(true)
+
+  @@index([group])
+  @@map("product_options")
+}
+
+model SystemConfig {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  key         String   @unique
+  group       String
+  value       Json
+  version     Int      @default(1)
+  isSecret    Boolean  @default(false)
+  description String?
+
+  @@index([group])
+  @@map("system_configs")
+}
+
+model MapLocationCache {
+  id                String            @id @default(cuid())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  provider          MapProvider       @default(AMAP)
+  cityHint          String            @default("")
+  sourceAddress     String
+  normalizedAddress String
+  formattedAddress  String?
+  province          String?
+  city              String?
+  district          String?
+  adcode            String?
+
+  lng               Decimal?          @db.Decimal(10, 6)
+  lat               Decimal?          @db.Decimal(10, 6)
+  status            MapLocationStatus @default(RESOLVED)
+  errorMessage      String?
+  geocodedAt        DateTime?
+
+  orders            Order[]
+
+  @@unique([provider, cityHint, normalizedAddress])
+  @@index([adcode])
+  @@map("map_location_caches")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  before      Json?
+  after       Json?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+
+  actorUser   User?    @relation(fields: [actorUserId], references: [id])
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

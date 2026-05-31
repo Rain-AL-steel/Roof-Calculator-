@@ -11,8 +11,8 @@ import { loadConfig, saveConfig, subscribeConfigChange } from "./services/config
 import { geocodeDeliveryAddress, getAmapSettings, hasUsableAmapSettings, loadAmap } from "./services/amapService.js";
 import {
   buildExportPayload,
-  clearOrders,
-  deleteOrder,
+  clearOrdersWithApiFallback,
+  deleteOrderWithApiFallback,
   generateOrderNo,
   getDateOnly,
   getOrderStats,
@@ -21,10 +21,12 @@ import {
   importOrdersFromPayload,
   loadBackupMeta,
   loadOrders,
+  loadOrdersWithApiFallback,
   normalizeOrder,
   readImportPayload,
   saveBackupMeta,
-  upsertOrder
+  updateOrderWithApiFallback,
+  upsertOrderWithApiFallback
 } from "./services/orderService.js";
 import { escapeHtml, formatMoney, formatNum, parseNum } from "./utils.js";
 
@@ -479,6 +481,13 @@ function enterApplication() {
   authView.hidden = true;
   renderAll();
   showView("dashboardView");
+  refreshOrdersFromPreferredSource();
+}
+
+function refreshOrdersFromPreferredSource() {
+  loadOrdersWithApiFallback().then(function () {
+    renderAll();
+  });
 }
 
 function showView(viewId) {
@@ -627,7 +636,9 @@ function renderRecordDetail(order, mode) {
 }
 
 function findOrder(orderId) {
-  return loadOrders().find(function (order) { return order.id === orderId; });
+  return loadOrders().find(function (order) {
+    return order.id === orderId || order.clientOrderId === orderId;
+  });
 }
 
 function openRecord(orderId, mode) {
@@ -644,9 +655,12 @@ function removeOrder(orderId) {
   var order = findOrder(orderId);
   if (!order) return;
   if (!window.confirm("确定删除订单 " + getOrderTitle(order) + " 吗？")) return;
-  deleteOrder(orderId);
-  recordDetail.hidden = true;
-  renderAll();
+  deleteOrderWithApiFallback(order.id, order).then(function () {
+    recordDetail.hidden = true;
+    renderAll();
+  }).catch(function () {
+    renderAll();
+  });
 }
 
 function isSameDeliveryAddress(order, previousOrder) {
@@ -721,7 +735,8 @@ function saveRecordEdit(form) {
   if (!order) return;
   var updated = normalizeOrder(Object.assign({}, order, {
     orderDate: form.elements.orderDate.value,
-    orderNo: form.elements.orderNo.value,
+    orderNo: order.orderNo,
+    clientOrderId: order.clientOrderId,
     customerName: form.elements.customerName.value,
     tileColor: form.elements.tileColor.value,
     deliveryAddress: form.elements.deliveryAddress.value,
@@ -736,10 +751,13 @@ function saveRecordEdit(form) {
     }
   }));
   resolveOrderLocation(updated, order).then(function (result) {
-    var saved = upsertOrder(result.order);
-    renderAll();
-    openRecord(saved.id, "view");
-    if (result.warning) window.alert(result.warning);
+    return updateOrderWithApiFallback(order.id, result.order).then(function (saved) {
+      renderAll();
+      openRecord(saved.id, "view");
+      if (result.warning) window.alert(result.warning);
+    });
+  }).catch(function (error) {
+    window.alert(error.message || "订单保存失败。");
   });
 }
 
@@ -778,11 +796,14 @@ function saveCurrentOrder() {
   }));
   setOrderSaveBusy(true);
   resolveOrderLocation(order, null).then(function (result) {
-    var saved = upsertOrder(result.order);
-    var orderNoInput = document.getElementById("orderNo");
-    if (orderNoInput) orderNoInput.value = saved.orderNo;
-    renderAll();
-    window.alert("订单 " + saved.orderNo + " 已保存。" + (result.warning ? "\n" + result.warning : ""));
+    return upsertOrderWithApiFallback(result.order).then(function (saved) {
+      var orderNoInput = document.getElementById("orderNo");
+      if (orderNoInput) orderNoInput.value = saved.orderNo;
+      renderAll();
+      window.alert("订单 " + saved.orderNo + " 已保存。" + (result.warning ? "\n" + result.warning : ""));
+    });
+  }).catch(function (error) {
+    window.alert(error.message || "订单保存失败。");
   }).finally(function () {
     setOrderSaveBusy(false);
   });
@@ -927,9 +948,15 @@ closeRecordDetail.addEventListener("click", function () {
 clearAllOrdersBtn.addEventListener("click", function () {
   if (!window.confirm("确定清空全部订单数据吗？此操作不可撤销。")) return;
   if (!window.confirm("请再次确认：清空后只能通过之前导出的 JSON 备份恢复。")) return;
-  clearOrders();
-  recordDetail.hidden = true;
-  renderAll();
+  clearOrdersWithApiFallback().then(function () {
+    recordDetail.hidden = true;
+    renderAll();
+  }).catch(function (error) {
+    console.warn("Order bulk clear failed.", {
+      reason: error && error.message ? error.message : String(error || "Unknown error")
+    });
+    renderAll();
+  });
 });
 
 exportDataBtn.addEventListener("click", exportLocalData);
