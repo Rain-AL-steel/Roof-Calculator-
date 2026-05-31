@@ -6,5 +6,6 @@ runtime-config.js
 dist/
 coverage/
 *.log
+*.zip
 .DS_Store
 Thumbs.db
