@@ -1,4 +1,5 @@
 import { computeGrandAmount, sumFiniteAmounts } from "../calc.js";
+import { deleteOrderFromApi, fetchOrdersFromApi, isApiConfigured, saveOrderToApi, updateOrderToApi } from "./apiClient.js";
 
 export const ORDER_STORAGE_KEY = "erp_orders_v1";
 export const BACKUP_META_STORAGE_KEY = "erp_backup_meta_v1";
@@ -180,6 +181,7 @@ export function normalizeOrder(input) {
   return {
     id: compactText(source.id) || createId(),
     orderNo: compactText(source.orderNo) || generateOrderNo(source.createdAt || now),
+    clientOrderId: compactText(source.clientOrderId),
     createdAt: compactText(source.createdAt) || now,
     updatedAt: compactText(source.updatedAt) || now,
     orderDate: orderDate,
@@ -214,6 +216,159 @@ function sortOrders(orders) {
   });
 }
 
+function readOrdersPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.orders)) return payload.orders;
+  return null;
+}
+
+function readOrderPayload(payload, fallback) {
+  if (payload && payload.order) return payload.order;
+  if (payload && typeof payload === "object" && (payload.id || payload.orderNo || payload.items || payload.totals)) return payload;
+  return fallback;
+}
+
+function getOrderIdentifiers(order) {
+  return [
+    compactText(order && order.id),
+    compactText(order && order.clientOrderId)
+  ].filter(Boolean);
+}
+
+function createIdentifierSet(identifiers) {
+  var set = {};
+  (Array.isArray(identifiers) ? identifiers : [identifiers]).forEach(function (identifier) {
+    var id = compactText(identifier);
+    if (id) set[id] = true;
+  });
+  return set;
+}
+
+function orderMatchesIdentifierSet(order, identifierSet) {
+  return getOrderIdentifiers(order).some(function (identifier) {
+    return Boolean(identifierSet[identifier]);
+  });
+}
+
+function findOrderByIdentifier(orders, identifier) {
+  var identifierSet = createIdentifierSet(identifier);
+  return (Array.isArray(orders) ? orders : []).find(function (order) {
+    return orderMatchesIdentifierSet(order, identifierSet);
+  }) || null;
+}
+
+function saveOrdersToLocal(orders, metaPatch) {
+  var storage = getStorage();
+  var next = sortOrders((Array.isArray(orders) ? orders : []).map(normalizeOrder));
+  if (storage) storage.setItem(ORDER_STORAGE_KEY, JSON.stringify(next));
+  if (metaPatch) saveBackupMeta(metaPatch);
+  return next;
+}
+
+function removeOrdersFromLocalByIdentifiers(identifiers, metaPatch) {
+  var identifierSet = createIdentifierSet(identifiers);
+  var next = loadOrders().filter(function (order) {
+    return !orderMatchesIdentifierSet(order, identifierSet);
+  });
+  return saveOrdersToLocal(next, Object.assign({ lastSavedAt: nowIso() }, metaPatch || {}));
+}
+
+function replaceOrderToLocal(order, identifiers, options) {
+  var settings = options || {};
+  var normalized = normalizeOrder(settings.touchUpdatedAt === false ? order : Object.assign({}, order, { updatedAt: nowIso() }));
+  var identifierSet = createIdentifierSet((Array.isArray(identifiers) ? identifiers : []).concat(getOrderIdentifiers(normalized)));
+  var orders = loadOrders();
+  var existing = orders.find(function (item) {
+    return orderMatchesIdentifierSet(item, identifierSet);
+  });
+  if (existing && settings.preserveCreatedAt !== false) {
+    normalized.createdAt = existing.createdAt || normalized.createdAt;
+  }
+  orders = orders.filter(function (item) {
+    return !orderMatchesIdentifierSet(item, identifierSet);
+  });
+  orders.unshift(normalized);
+  saveOrdersToLocal(orders, Object.assign({ lastSavedAt: nowIso() }, settings.metaPatch || {}));
+  return normalized;
+}
+
+function upsertOrderToLocal(order, options) {
+  var normalized = normalizeOrder(options && options.touchUpdatedAt === false ? order : Object.assign({}, order, { updatedAt: nowIso() }));
+  return replaceOrderToLocal(normalized, getOrderIdentifiers(normalized), Object.assign({}, options || {}, {
+    touchUpdatedAt: false
+  }));
+}
+
+function syncOrdersFromApi(metaPatch) {
+  return fetchOrdersFromApi().then(function (payload) {
+    var apiOrders = readOrdersPayload(payload);
+    if (!apiOrders) throw new Error("API orders payload is invalid.");
+    return saveOrdersToLocal(apiOrders, Object.assign({ lastSyncedAt: nowIso() }, metaPatch || {}));
+  });
+}
+
+function resolveApiOrderReference(orderId) {
+  var requestedId = compactText(orderId);
+  return syncOrdersFromApi().then(function (orders) {
+    var matchedOrder = findOrderByIdentifier(orders, requestedId);
+    var resolvedId = matchedOrder ? matchedOrder.id : requestedId;
+    return {
+      requestedId: requestedId,
+      order: matchedOrder,
+      orderId: resolvedId,
+      identifiers: [requestedId].concat(getOrderIdentifiers(matchedOrder))
+    };
+  });
+}
+
+function findApiOrderForDelete(orders, requestedId, orderHint) {
+  var hint = orderHint || {};
+  var orderNo = compactText(hint.orderNo);
+  var clientOrderId = compactText(hint.clientOrderId);
+  var id = compactText(hint.id);
+  return (Array.isArray(orders) ? orders : []).find(function (order) {
+    return (
+      compactText(order && order.orderNo) && compactText(order && order.orderNo) === orderNo
+    ) || (
+      clientOrderId && compactText(order && order.clientOrderId) === clientOrderId
+    ) || (
+      requestedId && compactText(order && order.clientOrderId) === requestedId
+    ) || (
+      id && compactText(order && order.clientOrderId) === id
+    ) || (
+      requestedId && compactText(order && order.id) === requestedId
+    );
+  }) || null;
+}
+
+function resolveApiOrderForDelete(orderId, orderHint) {
+  var requestedId = compactText(orderId);
+  var localOrder = findOrderByIdentifier(loadOrders(), requestedId);
+  var hint = Object.assign({}, localOrder || {}, orderHint || {});
+  var orderNo = compactText(hint.orderNo);
+  var clientOrderId = compactText(hint.clientOrderId);
+
+  return syncOrdersFromApi().then(function (orders) {
+    var matchedOrder = findApiOrderForDelete(orders, requestedId, hint);
+    if (!matchedOrder) {
+      var error = new Error("API order id could not be resolved before delete.");
+      error.attemptedId = requestedId;
+      error.orderNo = orderNo;
+      error.clientOrderId = clientOrderId;
+      throw error;
+    }
+
+    return {
+      attemptedId: requestedId,
+      order: matchedOrder,
+      orderId: matchedOrder.id,
+      orderNo: compactText(matchedOrder.orderNo) || orderNo,
+      clientOrderId: compactText(matchedOrder.clientOrderId) || clientOrderId,
+      identifiers: [requestedId, hint.id, hint.clientOrderId, matchedOrder.id, matchedOrder.clientOrderId]
+    };
+  });
+}
+
 export function loadOrders() {
   var storage = getStorage();
   var raw = storage ? storage.getItem(ORDER_STORAGE_KEY) : "";
@@ -236,32 +391,175 @@ export function saveBackupMeta(patch) {
 }
 
 export function saveOrders(orders, metaPatch) {
-  var storage = getStorage();
-  var next = sortOrders((Array.isArray(orders) ? orders : []).map(normalizeOrder));
-  if (storage) storage.setItem(ORDER_STORAGE_KEY, JSON.stringify(next));
-  saveBackupMeta(Object.assign({ lastSavedAt: nowIso() }, metaPatch || {}));
-  return next;
+  return saveOrdersToLocal(orders, Object.assign({ lastSavedAt: nowIso() }, metaPatch || {}));
 }
 
 export function upsertOrder(order) {
-  var normalized = normalizeOrder(Object.assign({}, order, { updatedAt: nowIso() }));
-  var orders = loadOrders();
-  var index = orders.findIndex(function (item) { return item.id === normalized.id; });
-  if (index >= 0) {
-    normalized.createdAt = orders[index].createdAt || normalized.createdAt;
-    orders[index] = normalized;
-  } else {
-    orders.unshift(normalized);
-  }
-  saveOrders(orders);
-  return normalized;
+  return upsertOrderToLocal(order);
+}
+
+export function loadOrdersWithApiFallback() {
+  if (!isApiConfigured()) return Promise.resolve(loadOrders());
+
+  return syncOrdersFromApi().catch(function (error) {
+    console.warn("订单 API 读取失败，已使用本地 localStorage 数据。", error);
+    return loadOrders();
+  });
+}
+
+export function upsertOrderWithApiFallback(order) {
+  var localCandidate = normalizeOrder(Object.assign({}, order, { updatedAt: nowIso() }));
+  if (!isApiConfigured()) return Promise.resolve(upsertOrderToLocal(localCandidate, { touchUpdatedAt: false }));
+
+  return saveOrderToApi(localCandidate).then(function (payload) {
+    var savedOrder = normalizeOrder(readOrderPayload(payload, localCandidate));
+    replaceOrderToLocal(savedOrder, [localCandidate.id, savedOrder.id, savedOrder.clientOrderId], {
+      touchUpdatedAt: false,
+      metaPatch: { lastSyncedAt: nowIso() }
+    });
+    return savedOrder;
+  }).catch(function (error) {
+    console.warn("订单 API 保存失败，已回退到本地 localStorage 保存。", error);
+    return upsertOrderToLocal(localCandidate, { touchUpdatedAt: false });
+  });
+}
+
+export function updateOrderWithApiFallback(orderId, order) {
+  var requestedId = compactText(orderId);
+  var localFallbackCandidate = normalizeOrder(Object.assign({}, order, {
+    id: requestedId,
+    orderNo: compactText(order && order.orderNo),
+    clientOrderId: compactText(order && order.clientOrderId),
+    updatedAt: nowIso()
+  }));
+  if (!isApiConfigured()) return Promise.resolve(upsertOrderToLocal(localFallbackCandidate, { touchUpdatedAt: false }));
+
+  return resolveApiOrderReference(requestedId).then(function (reference) {
+    var apiOrder = reference.order || {};
+    var clientOrderId = compactText(order && order.clientOrderId) ||
+      compactText(apiOrder.clientOrderId) ||
+      (reference.orderId !== requestedId ? requestedId : "");
+    var localCandidate = normalizeOrder(Object.assign({}, apiOrder, order, {
+      id: reference.orderId,
+      orderNo: compactText(apiOrder.orderNo) || compactText(order && order.orderNo),
+      clientOrderId: clientOrderId,
+      updatedAt: nowIso()
+    }));
+
+    return updateOrderToApi(reference.orderId, localCandidate).then(function (payload) {
+      var payloadOrder = readOrderPayload(payload, localCandidate);
+      var savedOrder = normalizeOrder(Object.assign({}, localCandidate, payloadOrder, {
+        id: compactText(payloadOrder && payloadOrder.id) || localCandidate.id,
+        orderNo: compactText(payloadOrder && payloadOrder.orderNo) || localCandidate.orderNo,
+        clientOrderId: compactText(payloadOrder && payloadOrder.clientOrderId) || localCandidate.clientOrderId
+      }));
+      replaceOrderToLocal(savedOrder, reference.identifiers.concat(getOrderIdentifiers(savedOrder)), {
+        touchUpdatedAt: false,
+        metaPatch: { lastSyncedAt: nowIso() }
+      });
+      return savedOrder;
+    }).catch(function (error) {
+      console.warn("Order API update failed; using localStorage fallback.", {
+        orderId: reference.orderId,
+        requestedId: requestedId,
+        reason: getErrorReason(error)
+      });
+      return replaceOrderToLocal(localCandidate, reference.identifiers, { touchUpdatedAt: false });
+    });
+  }).catch(function (error) {
+    console.warn("Order API id resolution failed; using localStorage fallback.", {
+      orderId: requestedId,
+      reason: getErrorReason(error)
+    });
+    return upsertOrderToLocal(localFallbackCandidate, { touchUpdatedAt: false });
+  });
 }
 
 export function deleteOrder(orderId) {
   var id = compactText(orderId);
-  var next = loadOrders().filter(function (order) { return order.id !== id; });
-  saveOrders(next);
-  return next;
+  return removeOrdersFromLocalByIdentifiers([id]);
+}
+
+export function deleteOrderWithApiFallback(orderId, orderHint) {
+  var requestedId = compactText(orderId);
+  if (!isApiConfigured()) return Promise.resolve(deleteOrder(requestedId));
+
+  return resolveApiOrderForDelete(requestedId, orderHint).then(function (reference) {
+    return deleteOrderFromApi(reference.orderId).then(function () {
+      return removeOrdersFromLocalByIdentifiers(reference.identifiers.concat([reference.orderId]), {
+        lastSyncedAt: nowIso()
+      });
+    }).catch(function (error) {
+      error.orderApiDeleteHandled = true;
+      console.warn("Order API delete failed; local cache was not removed.", {
+        attemptedId: reference.orderId,
+        orderNo: reference.orderNo,
+        clientOrderId: reference.clientOrderId,
+        reason: getErrorReason(error)
+      });
+      throw error;
+    });
+  }).catch(function (error) {
+    if (!(error && error.orderApiDeleteHandled)) {
+      console.warn("Order API id resolution failed; local cache was not removed.", {
+        attemptedId: error && error.attemptedId ? error.attemptedId : requestedId,
+        orderNo: error && error.orderNo ? error.orderNo : compactText(orderHint && orderHint.orderNo),
+        clientOrderId: error && error.clientOrderId ? error.clientOrderId : compactText(orderHint && orderHint.clientOrderId),
+        reason: getErrorReason(error)
+      });
+    }
+    throw error;
+  });
+}
+
+function getErrorReason(error) {
+  return error && error.message ? error.message : String(error || "Unknown error");
+}
+
+function getUniqueOrderIds(orders) {
+  var seen = {};
+  return (Array.isArray(orders) ? orders : []).map(function (order) {
+    return compactText(order && order.id);
+  }).filter(function (id) {
+    if (!id || seen[id]) return false;
+    seen[id] = true;
+    return true;
+  });
+}
+
+export function clearOrdersWithApiFallback() {
+  if (!isApiConfigured()) return Promise.resolve(clearOrders());
+
+  return syncOrdersFromApi().then(function (orders) {
+    var apiOrders = getUniqueOrderIds(orders).map(function (id) {
+      return findOrderByIdentifier(orders, id);
+    }).filter(Boolean);
+    var sequence = Promise.resolve();
+
+    apiOrders.forEach(function (order) {
+      sequence = sequence.then(function () {
+        return deleteOrderFromApi(order.id).then(function () {
+          removeOrdersFromLocalByIdentifiers(getOrderIdentifiers(order), {
+            lastSyncedAt: nowIso()
+          });
+        }).catch(function (error) {
+          console.warn("Order API bulk delete failed; local cache was not removed for this order.", {
+            orderId: order.id,
+            reason: getErrorReason(error)
+          });
+        });
+      });
+    });
+
+    return sequence.then(function () {
+      return loadOrders();
+    });
+  }).catch(function (error) {
+    console.warn("Order API bulk clear read failed; local cache was not cleared.", {
+      reason: getErrorReason(error)
+    });
+    return loadOrders();
+  });
 }
 
 export function clearOrders() {

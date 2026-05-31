@@ -1,0 +1,17 @@
+{
+    "orderDate": "2026-05-30",
+    "customerName": "测试客户",
+    "totals": {
+      "areaTotal": 1,
+      "mainAmount": 10,
+      "accessoryAmount": 0,
+      "steelAmount": 0,
+      "otherTileAmount": 0
+    },
+    "items": {
+      "mainRows": [],
+      "accessories": [],
+      "steels": [],
+      "otherTiles": []
+    }
+  }

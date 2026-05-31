@@ -24,6 +24,36 @@
 npm run dev
 ```
 
+## 本地 API 地址配置
+
+前端支持通过运行时配置连接本地后端，不需要把 API 地址写死进源码。
+
+1. 复制示例配置：
+
+```powershell
+copy runtime-config.example.js runtime-config.js
+```
+
+2. 按本地后端地址编辑 `runtime-config.js`：
+
+```js
+window.ERP_API_BASE_URL = 'http://127.0.0.1:3001';
+```
+
+3. 启动后端和前端：
+
+```powershell
+cd E:\Desktop\duplicate\backend
+npm run dev
+```
+
+```powershell
+cd E:\Desktop\duplicate
+npm run dev
+```
+
+`runtime-config.js` 已加入 `.gitignore`，只用于本机配置，不要提交。没有这个文件时，前端仍会按原有逻辑运行；API 不可用时订单保存和读取会回退到 localStorage。
+
 4. 终端会显示地址，默认是 `http://127.0.0.1:5173`。
 5. 按住 `Ctrl` 点击终端里的地址，或复制到浏览器打开。
 

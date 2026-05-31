@@ -1,7 +1,9 @@
 import { initAdminPage } from "./components/admin/adminPage.js";
 import { initShippingPage } from "./components/shipping/shippingPage.js";
 import {
+  getAuthUsernameDefault,
   hasAuthSetup,
+  isApiAuthConfigured,
   isAuthenticated,
   loginWithPassword,
   logout,
@@ -11,8 +13,8 @@ import { loadConfig, saveConfig, subscribeConfigChange } from "./services/config
 import { geocodeDeliveryAddress, getAmapSettings, hasUsableAmapSettings, loadAmap } from "./services/amapService.js";
 import {
   buildExportPayload,
-  clearOrders,
-  deleteOrder,
+  clearOrdersWithApiFallback,
+  deleteOrderWithApiFallback,
   generateOrderNo,
   getDateOnly,
   getOrderStats,
@@ -21,10 +23,12 @@ import {
   importOrdersFromPayload,
   loadBackupMeta,
   loadOrders,
+  loadOrdersWithApiFallback,
   normalizeOrder,
   readImportPayload,
   saveBackupMeta,
-  upsertOrder
+  updateOrderWithApiFallback,
+  upsertOrderWithApiFallback
 } from "./services/orderService.js";
 import { escapeHtml, formatMoney, formatNum, parseNum } from "./utils.js";
 
@@ -33,6 +37,8 @@ var authView = document.getElementById("authView");
 var authForm = document.getElementById("authForm");
 var authTitle = document.getElementById("authTitle");
 var authSubtitle = document.getElementById("authSubtitle");
+var authUsernameField = document.getElementById("authUsernameField");
+var authUsername = document.getElementById("authUsername");
 var authPassword = document.getElementById("authPassword");
 var authConfirmField = document.getElementById("authConfirmField");
 var authConfirmPassword = document.getElementById("authConfirmPassword");
@@ -459,12 +465,15 @@ function hasDraftContent(draft) {
 
 function renderAuthGate() {
   var setupMode = !hasAuthSetup();
+  var showUsername = !setupMode && isApiAuthConfigured();
   authView.hidden = false;
   workspaceHeader.hidden = true;
   adminView.hidden = true;
   businessViews.forEach(function (view) { view.hidden = true; });
   authTitle.textContent = setupMode ? "设置登录密码" : "登录系统";
-  authSubtitle.textContent = setupMode ? "第一次使用需要先设置本机密码。密码只保存在当前浏览器。" : "请输入本机密码后继续使用。";
+  authSubtitle.textContent = setupMode ? "第一次使用需要先设置本机密码。密码只保存在当前浏览器。" : (showUsername ? "请输入账号和密码后继续使用。" : "请输入本机密码后继续使用。");
+  if (authUsernameField) authUsernameField.hidden = !showUsername;
+  if (authUsername) authUsername.value = showUsername ? getAuthUsernameDefault() : "";
   authConfirmField.hidden = !setupMode;
   authPassword.setAttribute("autocomplete", setupMode ? "new-password" : "current-password");
   authSubmit.querySelector("span").textContent = setupMode ? "设置并进入" : "进入系统";
@@ -472,13 +481,29 @@ function renderAuthGate() {
   authStatus.classList.remove("is-error", "is-success");
   authPassword.value = "";
   authConfirmPassword.value = "";
-  setTimeout(function () { authPassword.focus(); }, 0);
+  setTimeout(function () {
+    if (showUsername && authUsername) authUsername.focus();
+    else authPassword.focus();
+  }, 0);
 }
 
 function enterApplication() {
   authView.hidden = true;
   renderAll();
   showView("dashboardView");
+  refreshOrdersFromPreferredSource();
+}
+
+window.addEventListener("erp-api-unauthorized", function () {
+  logout();
+  recordDetail.hidden = true;
+  renderAuthGate();
+});
+
+function refreshOrdersFromPreferredSource() {
+  loadOrdersWithApiFallback().then(function () {
+    renderAll();
+  });
 }
 
 function showView(viewId) {
@@ -627,7 +652,9 @@ function renderRecordDetail(order, mode) {
 }
 
 function findOrder(orderId) {
-  return loadOrders().find(function (order) { return order.id === orderId; });
+  return loadOrders().find(function (order) {
+    return order.id === orderId || order.clientOrderId === orderId;
+  });
 }
 
 function openRecord(orderId, mode) {
@@ -644,9 +671,12 @@ function removeOrder(orderId) {
   var order = findOrder(orderId);
   if (!order) return;
   if (!window.confirm("确定删除订单 " + getOrderTitle(order) + " 吗？")) return;
-  deleteOrder(orderId);
-  recordDetail.hidden = true;
-  renderAll();
+  deleteOrderWithApiFallback(order.id, order).then(function () {
+    recordDetail.hidden = true;
+    renderAll();
+  }).catch(function () {
+    renderAll();
+  });
 }
 
 function isSameDeliveryAddress(order, previousOrder) {
@@ -721,7 +751,8 @@ function saveRecordEdit(form) {
   if (!order) return;
   var updated = normalizeOrder(Object.assign({}, order, {
     orderDate: form.elements.orderDate.value,
-    orderNo: form.elements.orderNo.value,
+    orderNo: order.orderNo,
+    clientOrderId: order.clientOrderId,
     customerName: form.elements.customerName.value,
     tileColor: form.elements.tileColor.value,
     deliveryAddress: form.elements.deliveryAddress.value,
@@ -736,10 +767,13 @@ function saveRecordEdit(form) {
     }
   }));
   resolveOrderLocation(updated, order).then(function (result) {
-    var saved = upsertOrder(result.order);
-    renderAll();
-    openRecord(saved.id, "view");
-    if (result.warning) window.alert(result.warning);
+    return updateOrderWithApiFallback(order.id, result.order).then(function (saved) {
+      renderAll();
+      openRecord(saved.id, "view");
+      if (result.warning) window.alert(result.warning);
+    });
+  }).catch(function (error) {
+    window.alert(error.message || "订单保存失败。");
   });
 }
 
@@ -778,11 +812,14 @@ function saveCurrentOrder() {
   }));
   setOrderSaveBusy(true);
   resolveOrderLocation(order, null).then(function (result) {
-    var saved = upsertOrder(result.order);
-    var orderNoInput = document.getElementById("orderNo");
-    if (orderNoInput) orderNoInput.value = saved.orderNo;
-    renderAll();
-    window.alert("订单 " + saved.orderNo + " 已保存。" + (result.warning ? "\n" + result.warning : ""));
+    return upsertOrderWithApiFallback(result.order).then(function (saved) {
+      var orderNoInput = document.getElementById("orderNo");
+      if (orderNoInput) orderNoInput.value = saved.orderNo;
+      renderAll();
+      window.alert("订单 " + saved.orderNo + " 已保存。" + (result.warning ? "\n" + result.warning : ""));
+    });
+  }).catch(function (error) {
+    window.alert(error.message || "订单保存失败。");
   }).finally(function () {
     setOrderSaveBusy(false);
   });
@@ -848,15 +885,23 @@ document.addEventListener("click", function (event) {
 authForm.addEventListener("submit", function (event) {
   event.preventDefault();
   var setupMode = !hasAuthSetup();
+  var loginUsername = authUsername ? authUsername.value.trim() : "";
   authSubmit.disabled = true;
   authStatus.textContent = setupMode ? "正在设置密码..." : "正在登录...";
   authStatus.classList.remove("is-error");
   authStatus.classList.add("is-success");
-  (setupMode ? setupPassword(authPassword.value, authConfirmPassword.value) : loginWithPassword(authPassword.value))
+  (setupMode ? setupPassword(authPassword.value, authConfirmPassword.value) : loginWithPassword(authPassword.value, loginUsername))
     .then(function () {
       enterApplication();
     })
     .catch(function (error) {
+      var reason = error && error.message ? error.message : "Login failed.";
+      if (!setupMode) {
+        console.warn("[auth-login-failed]", {
+          username: loginUsername || getAuthUsernameDefault(),
+          reason: reason
+        });
+      }
       authStatus.textContent = error.message || "登录失败，请重试。";
       authStatus.classList.add("is-error");
       authStatus.classList.remove("is-success");
@@ -927,9 +972,15 @@ closeRecordDetail.addEventListener("click", function () {
 clearAllOrdersBtn.addEventListener("click", function () {
   if (!window.confirm("确定清空全部订单数据吗？此操作不可撤销。")) return;
   if (!window.confirm("请再次确认：清空后只能通过之前导出的 JSON 备份恢复。")) return;
-  clearOrders();
-  recordDetail.hidden = true;
-  renderAll();
+  clearOrdersWithApiFallback().then(function () {
+    recordDetail.hidden = true;
+    renderAll();
+  }).catch(function (error) {
+    console.warn("Order bulk clear failed.", {
+      reason: error && error.message ? error.message : String(error || "Unknown error")
+    });
+    renderAll();
+  });
 });
 
 exportDataBtn.addEventListener("click", exportLocalData);

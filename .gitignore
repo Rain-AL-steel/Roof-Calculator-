@@ -1,4 +1,10 @@
+.env
+backend/.env
 node_modules/
+backend/node_modules/
+runtime-config.js
+dist/
+coverage/
 *.log
 .DS_Store
 Thumbs.db

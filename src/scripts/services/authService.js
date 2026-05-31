@@ -1,3 +1,5 @@
+import { clearApiAuth, getApiAuthToken, getDefaultApiUsername, isApiConfigured, loginToApi } from "./apiClient.js";
+
 export const AUTH_STORAGE_KEY = "erp_auth_v1";
 export const AUTH_SESSION_KEY = "erp_auth_session_v1";
 export const AUTH_VERSION = 1;
@@ -113,10 +115,20 @@ export function loadAuthRecord() {
 }
 
 export function hasAuthSetup() {
+  if (isApiConfigured()) return true;
   return Boolean(loadAuthRecord());
 }
 
+export function getAuthUsernameDefault() {
+  return getDefaultApiUsername();
+}
+
+export function isApiAuthConfigured() {
+  return isApiConfigured();
+}
+
 export function isAuthenticated() {
+  if (isApiConfigured()) return Boolean(getApiAuthToken());
   var record = loadAuthRecord();
   if (!record) return false;
   var session = safeParseJson(getSessionStorage() ? getSessionStorage().getItem(AUTH_SESSION_KEY) : "", null);
@@ -124,11 +136,15 @@ export function isAuthenticated() {
 }
 
 export function logout() {
+  clearApiAuth();
   var storage = getSessionStorage();
   if (storage) storage.removeItem(AUTH_SESSION_KEY);
 }
 
 export async function setupPassword(password, confirmPassword) {
+  if (isApiConfigured()) {
+    throw new Error("API 模式下请使用后端管理员账号登录。");
+  }
   if (password !== confirmPassword) {
     throw new Error("两次输入的密码不一致。");
   }
@@ -159,7 +175,10 @@ async function unlockWithRecord(record) {
   }
 }
 
-export async function loginWithPassword(password) {
+export async function loginWithPassword(password, username) {
+  if (isApiConfigured()) {
+    return loginToApi(String(username || "").trim() || getDefaultApiUsername(), password);
+  }
   var record = loadAuthRecord();
   if (!record) throw new Error("还没有设置登录密码。");
   var passwordHash = await hashPassword(password, record.salt, record.iterations || AUTH_ITERATIONS);
@@ -171,6 +190,9 @@ export async function loginWithPassword(password) {
 }
 
 export async function changePassword(currentPassword, nextPassword, confirmPassword) {
+  if (isApiConfigured()) {
+    throw new Error("API 模式下请在后端更新管理员密码。");
+  }
   await loginWithPassword(currentPassword);
   return setupPassword(nextPassword, confirmPassword);
 }
@@ -178,6 +200,7 @@ export async function changePassword(currentPassword, nextPassword, confirmPassw
 export function clearAuth() {
   var local = getLocalStorage();
   var session = getSessionStorage();
+  clearApiAuth();
   if (local) local.removeItem(AUTH_STORAGE_KEY);
   if (session) session.removeItem(AUTH_SESSION_KEY);
 }
