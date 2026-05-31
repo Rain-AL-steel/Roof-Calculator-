@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../backend/src/app.js";
 import { hashPassword, signAuthToken, verifyAuthToken } from "../backend/src/auth.js";
+import { recordPrismaQueryDuration } from "../backend/src/requestContext.js";
 
 var activeServers = [];
 var TEST_JWT_SECRET = "test-jwt-secret-for-order-api";
@@ -102,6 +103,10 @@ function createMockPrisma() {
     return user;
   }
 
+  function recordMockPrismaQuery() {
+    recordPrismaQueryDuration(1);
+  }
+
   function findOrder(args) {
     if (args.where.id) return ordersById[args.where.id] || null;
     if (args.where.clientOrderId) return ordersByClientOrderId[args.where.clientOrderId] || null;
@@ -111,21 +116,25 @@ function createMockPrisma() {
   var tx = {
     order: {
       findUnique: async function (args) {
+        recordMockPrismaQuery();
         captured.findUniqueArgs.push(args);
         return findOrder(args);
       },
       create: async function (args) {
+        recordMockPrismaQuery();
         captured.createData = args.data;
         var order = createDbOrder(args.data);
         return storeOrder(order);
       },
       update: async function (args) {
+        recordMockPrismaQuery();
         captured.updateData = args.data;
         var existing = ordersById[args.where.id];
         var order = createDbOrder(Object.assign({ id: args.where.id }, args.data), existing);
         return storeOrder(order);
       },
       delete: async function (args) {
+        recordMockPrismaQuery();
         captured.deleteArgs = args;
         var existing = ordersById[args.where.id];
         if (existing) {
@@ -137,12 +146,14 @@ function createMockPrisma() {
     },
     orderMainRow: {
       deleteMany: async function (args) {
+        recordMockPrismaQuery();
         captured.deleteMainRowsArgs = args;
         var existing = ordersById[args.where.orderId];
         if (existing) existing.mainRows = [];
         return { count: 0 };
       },
       createMany: async function (args) {
+        recordMockPrismaQuery();
         captured.createMainRowsArgs = args;
         var orderId = args.data && args.data[0] && args.data[0].orderId;
         var existing = ordersById[orderId];
@@ -158,12 +169,14 @@ function createMockPrisma() {
     },
     orderLineItem: {
       deleteMany: async function (args) {
+        recordMockPrismaQuery();
         captured.deleteLineItemsArgs = args;
         var existing = ordersById[args.where.orderId];
         if (existing) existing.lineItems = [];
         return { count: 0 };
       },
       createMany: async function (args) {
+        recordMockPrismaQuery();
         captured.createLineItemsArgs = args;
         var orderId = args.data && args.data[0] && args.data[0].orderId;
         var existing = ordersById[orderId];
@@ -179,6 +192,7 @@ function createMockPrisma() {
     },
     mapLocationCache: {
       upsert: async function () {
+        recordMockPrismaQuery();
         captured.mapLocationUpsertCalls += 1;
         return { id: "map-location-1" };
       }
@@ -195,12 +209,15 @@ function createMockPrisma() {
     prisma: {
       user: {
         findUnique: async function (args) {
+          recordMockPrismaQuery();
           captured.userFindUniqueArgs = captured.userFindUniqueArgs || [];
           captured.userFindUniqueArgs.push(args);
           return usersByUsername[args.where.username] || null;
         },
         update: async function (args) {
+          recordMockPrismaQuery();
           captured.userUpdateArgs = args;
+          if (captured.userUpdateError) throw captured.userUpdateError;
           var user = Object.values(usersByUsername).find(function (item) {
             return item.id === args.where.id;
           });
@@ -210,24 +227,34 @@ function createMockPrisma() {
       },
       order: {
         findUnique: async function (args) {
+          recordMockPrismaQuery();
           captured.rootFindUniqueArgs = captured.rootFindUniqueArgs || [];
           captured.rootFindUniqueArgs.push(args);
           return findOrder(args);
         },
         findMany: async function () {
+          recordMockPrismaQuery();
           return Object.values(ordersById);
         },
         update: async function (args) {
+          recordMockPrismaQuery();
           captured.rootUpdateData = args.data;
           var existing = ordersById[args.where.id];
           var order = createDbOrder(Object.assign({ id: args.where.id }, args.data), existing);
           return storeOrder(order);
         },
         delete: async function (args) {
+          recordMockPrismaQuery();
           var existing = ordersById[args.where.id];
           if (existing) delete ordersById[args.where.id];
           return existing;
         }
+      },
+      $queryRaw: async function () {
+        recordMockPrismaQuery();
+        captured.queryRawCalls = (captured.queryRawCalls || 0) + 1;
+        if (captured.queryRawError) throw captured.queryRawError;
+        return [{ value: 1 }];
       },
       $transaction: async function (handler) {
         return handler(tx);
@@ -277,12 +304,107 @@ describe("backend order API", function () {
   it("allows health checks without authentication", async function () {
     var mock = createMockPrisma();
     var serverInfo = await listen(createTestApp(mock));
+    var infoCalls = [];
+    var originalInfo = console.info;
+    console.info = function () {
+      infoCalls.push(Array.prototype.slice.call(arguments));
+    };
 
-    var response = await fetch(serverInfo.url + "/api/health");
+    try {
+      var response = await fetch(serverInfo.url + "/api/health");
+      var body = await response.json();
+      await new Promise(function (resolve) { setTimeout(resolve, 0); });
+      var requestId = response.headers.get("x-request-id");
+      var perfLog = infoCalls.map(function (call) {
+        try {
+          return JSON.parse(call[0]);
+        } catch (error) {
+          return null;
+        }
+      }).find(function (entry) {
+        return entry && entry.type === "api_perf";
+      });
+
+      expect(response.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(requestId).toBeTruthy();
+      expect(perfLog).toMatchObject({
+        type: "api_perf",
+        requestId: requestId,
+        method: "GET",
+        path: "/api/health",
+        status: 200,
+        dbDurationMs: 0,
+        dbQueryCount: 0,
+        dbMaxDurationMs: 0
+      });
+      expect(typeof perfLog.durationMs).toBe("number");
+      expect(new Date(perfLog.timestamp).toString()).not.toBe("Invalid Date");
+    } finally {
+      console.info = originalInfo;
+    }
+  });
+
+  it("checks database health without authentication and logs DB timing", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+    var infoCalls = [];
+    var originalInfo = console.info;
+    console.info = function () {
+      infoCalls.push(Array.prototype.slice.call(arguments));
+    };
+
+    try {
+      var response = await fetch(serverInfo.url + "/api/health/db");
+      var body = await response.json();
+      await new Promise(function (resolve) { setTimeout(resolve, 0); });
+      var requestId = response.headers.get("x-request-id");
+      var perfLog = infoCalls.map(function (call) {
+        try {
+          return JSON.parse(call[0]);
+        } catch (error) {
+          return null;
+        }
+      }).find(function (entry) {
+        return entry && entry.type === "api_perf";
+      });
+
+      expect(response.status).toBe(200);
+      expect(requestId).toBeTruthy();
+      expect(body.ok).toBe(true);
+      expect(typeof body.dbMs).toBe("number");
+      expect(new Date(body.timestamp).toString()).not.toBe("Invalid Date");
+      expect(mock.captured.queryRawCalls).toBe(1);
+      expect(perfLog).toMatchObject({
+        type: "api_perf",
+        requestId: requestId,
+        method: "GET",
+        path: "/api/health/db",
+        status: 200
+      });
+      expect(perfLog.dbQueryCount).toBeGreaterThanOrEqual(1);
+      expect(perfLog.dbDurationMs).toBeGreaterThanOrEqual(1);
+      expect(perfLog.dbMaxDurationMs).toBeGreaterThanOrEqual(1);
+    } finally {
+      console.info = originalInfo;
+    }
+  });
+
+  it("returns 503 when database health check fails", async function () {
+    var mock = createMockPrisma();
+    mock.captured.queryRawError = Object.assign(new Error("connection failed"), { code: "P1001" });
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/health/db");
     var body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body.ok).toBe(true);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe("P1001");
+    expect(body.message).toBe("Database unavailable");
+    expect(typeof body.dbMs).toBe("number");
+    expect(new Date(body.timestamp).toString()).not.toBe("Invalid Date");
   });
 
   it("logs in with an active bcrypt admin account and returns a JWT", async function () {
@@ -296,20 +418,97 @@ describe("backend order API", function () {
       roles: [{ role: { code: "ADMIN" } }]
     });
     var serverInfo = await listen(createTestApp(mock));
+    var infoCalls = [];
+    var originalInfo = console.info;
+    console.info = function () {
+      infoCalls.push(Array.prototype.slice.call(arguments));
+    };
 
-    var response = await fetch(serverInfo.url + "/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "admin", password: "correct-password" })
+    try {
+      var response = await fetch(serverInfo.url + "/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "correct-password" })
+      });
+      var body = await response.json();
+      await new Promise(function (resolve) { setTimeout(resolve, 0); });
+      var perfLog = infoCalls.map(function (call) {
+        try {
+          return JSON.parse(call[0]);
+        } catch (error) {
+          return null;
+        }
+      }).find(function (entry) {
+        return entry && entry.type === "api_perf";
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-request-id")).toBeTruthy();
+      expect(body.token).toBeTruthy();
+      expect(body.tokenType).toBe("Bearer");
+      expect(body.user.username).toBe("admin");
+      expect(body.user.roles).toEqual(["ADMIN"]);
+      expect(verifyAuthToken(body.token, TEST_JWT_SECRET).sub).toBe("admin-user-id");
+      expect(perfLog.dbQueryCount).toBe(1);
+      expect(perfLog.dbDurationMs).toBeGreaterThanOrEqual(1);
+      expect(perfLog.dbMaxDurationMs).toBeGreaterThanOrEqual(1);
+      await new Promise(function (resolve) { setTimeout(resolve, 10); });
+      expect(mock.captured.userUpdateArgs.where.id).toBe("admin-user-id");
+    } finally {
+      console.info = originalInfo;
+    }
+  });
+
+  it("returns a token when lastLoginAt update fails and logs a safe warning", async function () {
+    var mock = createMockPrisma();
+    mock.storeUser({
+      id: "admin-user-id",
+      username: "admin",
+      displayName: "Admin",
+      passwordHash: await hashPassword("correct-password"),
+      isActive: true,
+      roles: [{ role: { code: "ADMIN" } }]
     });
-    var body = await response.json();
+    mock.captured.userUpdateError = Object.assign(new Error("connection failed"), { code: "P1001" });
+    var serverInfo = await listen(createTestApp(mock));
+    var warnCalls = [];
+    var originalWarn = console.warn;
+    console.warn = function () {
+      warnCalls.push(Array.prototype.slice.call(arguments));
+    };
 
-    expect(response.status).toBe(200);
-    expect(body.token).toBeTruthy();
-    expect(body.tokenType).toBe("Bearer");
-    expect(body.user.username).toBe("admin");
-    expect(body.user.roles).toEqual(["ADMIN"]);
-    expect(verifyAuthToken(body.token, TEST_JWT_SECRET).sub).toBe("admin-user-id");
+    try {
+      var response = await fetch(serverInfo.url + "/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "correct-password" })
+      });
+      var body = await response.json();
+      await new Promise(function (resolve) { setTimeout(resolve, 10); });
+      var requestId = response.headers.get("x-request-id");
+      var warning = warnCalls.map(function (call) {
+        try {
+          return JSON.parse(call[0]);
+        } catch (error) {
+          return null;
+        }
+      }).find(function (entry) {
+        return entry && entry.type === "last_login_update_failed";
+      });
+
+      expect(response.status).toBe(200);
+      expect(requestId).toBeTruthy();
+      expect(body.token).toBeTruthy();
+      expect(warning).toMatchObject({
+        type: "last_login_update_failed",
+        requestId: requestId,
+        userId: "admin-user-id",
+        code: "P1001"
+      });
+      expect(new Date(warning.timestamp).toString()).not.toBe("Invalid Date");
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   it("rejects order API requests without a bearer token", async function () {

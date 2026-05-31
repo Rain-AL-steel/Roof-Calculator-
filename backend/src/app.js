@@ -1,6 +1,9 @@
+import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import express from "express";
 import cors from "cors";
 import { prisma as defaultPrisma } from "./prisma.js";
+import { createRequestMetrics, roundMetric, runOutsideRequestMetrics, runWithRequestMetrics } from "./requestContext.js";
 import { findUserForLogin, getJwtExpiresIn, getJwtSecret, signAuthToken, toAuthUser, verifyAuthToken, verifyPassword } from "./auth.js";
 import { buildOrderPayload, createOrderNo, getOrderInclude, toFrontendOrder } from "./orderMapper.js";
 
@@ -99,6 +102,41 @@ function createHttpError(statusCode, code, message) {
   return error;
 }
 
+function createRequestId() {
+  return randomUUID();
+}
+
+function getRequestLogPath(req) {
+  return String(req.originalUrl || req.url || "").split("?")[0] || req.path || "";
+}
+
+function createApiPerformanceMiddleware() {
+  return function (req, res, next) {
+    var requestId = createRequestId();
+    var startedAt = performance.now();
+    var metrics = createRequestMetrics(requestId);
+    req.requestId = requestId;
+    res.setHeader("X-Request-Id", requestId);
+
+    res.on("finish", function () {
+      console.info(JSON.stringify({
+        type: "api_perf",
+        requestId: requestId,
+        method: req.method,
+        path: getRequestLogPath(req),
+        status: res.statusCode,
+        durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
+        dbDurationMs: roundMetric(metrics.dbDurationMs),
+        dbQueryCount: metrics.dbQueryCount,
+        dbMaxDurationMs: roundMetric(metrics.dbMaxDurationMs),
+        timestamp: new Date().toISOString()
+      }));
+    });
+
+    runWithRequestMetrics(metrics, next);
+  };
+}
+
 function getBearerToken(req) {
   var header = String(req.headers.authorization || "");
   var match = /^Bearer\s+(.+)$/i.exec(header);
@@ -135,6 +173,31 @@ function createAuthMiddleware(options) {
       });
     }
   };
+}
+
+function getSafeBackgroundError(error) {
+  if (error && error.code) return { code: String(error.code).slice(0, 80) };
+  return {
+    message: redactSensitiveText(error && error.message ? error.message : "Last login update failed.")
+  };
+}
+
+function scheduleLastLoginUpdate(prisma, userId, requestId) {
+  setImmediate(function () {
+    runOutsideRequestMetrics(function () {
+      prisma.user.update({
+        where: { id: userId },
+        data: { lastLoginAt: new Date() }
+      }).catch(function (error) {
+        console.warn(JSON.stringify(Object.assign({
+          type: "last_login_update_failed",
+          requestId: requestId || "",
+          userId: userId,
+          timestamp: new Date().toISOString()
+        }, getSafeBackgroundError(error))));
+      });
+    });
+  });
 }
 
 function sleep(ms) {
@@ -364,12 +427,33 @@ export function createApp(options) {
     jwtExpiresIn: getJwtExpiresIn(options)
   };
 
+  app.use("/api", createApiPerformanceMiddleware());
   app.use(cors(createCorsOptions()));
   app.use(express.json({ limit: "2mb" }));
 
   app.get("/api/health", function (req, res) {
     res.json({ ok: true, service: "roof-calculator-api" });
   });
+
+  app.get("/api/health/db", asyncHandler(async function (req, res) {
+    var startedAt = performance.now();
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({
+        ok: true,
+        dbMs: roundMetric(performance.now() - startedAt),
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(503).json({
+        ok: false,
+        code: error && error.code ? String(error.code).slice(0, 80) : "DATABASE_UNAVAILABLE",
+        message: "Database unavailable",
+        dbMs: roundMetric(performance.now() - startedAt),
+        timestamp: new Date().toISOString()
+      });
+    }
+  }));
 
   app.post("/api/auth/login", asyncHandler(async function (req, res) {
     var secret = getJwtSecret(authOptions);
@@ -391,26 +475,13 @@ export function createApp(options) {
       throw createHttpError(401, "INVALID_CREDENTIALS", "Username or password is incorrect.");
     }
 
-    try {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() }
-      });
-    } catch (error) {
-      console.warn("[login-last-login-skip]", {
-        userId: user.id,
-        name: error && error.name ? error.name : "Error",
-        code: error && error.code ? error.code : undefined,
-        message: redactSensitiveText(error && error.message ? error.message : "Last login update failed.")
-      });
-    }
-
     res.json({
       token: signAuthToken(user, secret, authOptions.jwtExpiresIn),
       tokenType: "Bearer",
       expiresIn: authOptions.jwtExpiresIn,
       user: toAuthUser(user)
     });
+    scheduleLastLoginUpdate(prisma, user.id, req.requestId);
   }));
 
   app.use("/api/orders", createAuthMiddleware(authOptions));
