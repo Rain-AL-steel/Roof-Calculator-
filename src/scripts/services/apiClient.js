@@ -3,6 +3,8 @@ export const API_TIMEOUT_MS = 20000;
 export const ORDER_READ_TIMEOUT_MS = 15000;
 export const ORDER_WRITE_TIMEOUT_MS = 20000;
 export const ORDER_DELETE_TIMEOUT_MS = 20000;
+export const API_AUTH_STORAGE_KEY = "erp_api_auth_v1";
+export const DEFAULT_API_USERNAME = "admin";
 
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
@@ -36,6 +38,66 @@ function getRuntimeFetch() {
   } catch (error) {
     return null;
   }
+}
+
+function getStorage() {
+  try {
+    return globalThis.localStorage || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function safeParseJson(raw, fallback) {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function emitUnauthorized() {
+  try {
+    if (typeof globalThis.dispatchEvent === "function" && typeof CustomEvent === "function") {
+      globalThis.dispatchEvent(new CustomEvent("erp-api-unauthorized"));
+    }
+  } catch (error) {
+    // Ignore event dispatch failures in non-browser runtimes.
+  }
+}
+
+export function getDefaultApiUsername() {
+  return String(globalThis.ERP_ADMIN_USERNAME || globalThis.__ERP_ADMIN_USERNAME__ || DEFAULT_API_USERNAME).trim() || DEFAULT_API_USERNAME;
+}
+
+export function saveApiAuth(auth) {
+  var storage = getStorage();
+  var record = {
+    token: String(auth && auth.token || ""),
+    tokenType: String(auth && auth.tokenType || "Bearer"),
+    expiresIn: String(auth && auth.expiresIn || ""),
+    user: auth && auth.user ? auth.user : null,
+    savedAt: new Date().toISOString()
+  };
+  if (storage) storage.setItem(API_AUTH_STORAGE_KEY, JSON.stringify(record));
+  return record;
+}
+
+export function loadApiAuth() {
+  var storage = getStorage();
+  var record = safeParseJson(storage ? storage.getItem(API_AUTH_STORAGE_KEY) : "", null);
+  return record && record.token ? record : null;
+}
+
+export function getApiAuthToken() {
+  var record = loadApiAuth();
+  return record ? record.token : "";
+}
+
+export function clearApiAuth() {
+  var storage = getStorage();
+  if (storage) storage.removeItem(API_AUTH_STORAGE_KEY);
 }
 
 export function getApiBaseUrl() {
@@ -80,6 +142,10 @@ export function apiRequest(path, options) {
   }
 
   var headers = Object.assign({ Accept: "application/json" }, requestOptions.headers || {});
+  var token = getApiAuthToken();
+  if (token && !headers.Authorization && !headers.authorization) {
+    headers.Authorization = "Bearer " + token;
+  }
   var body = requestOptions.body;
   if (body !== undefined && typeof body !== "string" && !isFormDataBody(body)) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
@@ -97,7 +163,14 @@ export function apiRequest(path, options) {
     return response.text().then(function (text) {
       var data = text ? JSON.parse(text) : null;
       if (!response.ok) {
-        throw new Error(data && data.message ? data.message : "API request failed with status " + response.status + ".");
+        var error = new Error(data && data.message ? data.message : "API request failed with status " + response.status + ".");
+        error.status = response.status;
+        error.code = data && data.code ? data.code : "";
+        if (response.status === 401) {
+          clearApiAuth();
+          emitUnauthorized();
+        }
+        throw error;
       }
       return data;
     });
@@ -111,6 +184,20 @@ export function apiRequest(path, options) {
       });
     }
     throw error;
+  });
+}
+
+export function loginToApi(username, password) {
+  return apiRequest("/auth/login", {
+    method: "POST",
+    timeoutMs: ORDER_WRITE_TIMEOUT_MS,
+    body: {
+      username: username,
+      password: password
+    }
+  }).then(function (payload) {
+    if (!payload || !payload.token) throw new Error("API login response did not include a token.");
+    return saveApiAuth(payload);
   });
 }
 

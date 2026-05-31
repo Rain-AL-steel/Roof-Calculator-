@@ -1,7 +1,8 @@
 import { webcrypto } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AUTH_STORAGE_KEY,
+  getAuthUsernameDefault,
   hasAuthSetup,
   isAuthenticated,
   loadAuthRecord,
@@ -9,6 +10,10 @@ import {
   logout,
   setupPassword
 } from "../src/scripts/services/authService.js";
+import { clearApiAuth, getApiAuthToken } from "../src/scripts/services/apiClient.js";
+
+var originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+var originalLocationDescriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
 
 function createStorageMock() {
   var data = {};
@@ -55,7 +60,80 @@ beforeEach(function () {
   });
 });
 
+afterEach(function () {
+  if (originalFetchDescriptor) Object.defineProperty(globalThis, "fetch", originalFetchDescriptor);
+  else delete globalThis.fetch;
+  if (originalLocationDescriptor) Object.defineProperty(globalThis, "location", originalLocationDescriptor);
+  else delete globalThis.location;
+  delete globalThis.ERP_ADMIN_USERNAME;
+  delete globalThis.__ERP_ADMIN_USERNAME__;
+  clearApiAuth();
+});
+
 describe("auth service", function () {
+  it("uses the entered API username when logging in and saves the token", async function () {
+    var capturedBody = null;
+    Object.defineProperty(globalThis, "location", {
+      value: { protocol: "http:" },
+      configurable: true
+    });
+    Object.defineProperty(globalThis, "fetch", {
+      value: function (url, options) {
+        capturedBody = JSON.parse(options.body);
+        expect(url).toBe("/api/auth/login");
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: function () {
+            return Promise.resolve(JSON.stringify({
+              token: "api-token",
+              tokenType: "Bearer",
+              expiresIn: "8h",
+              user: { username: capturedBody.username }
+            }));
+          }
+        });
+      },
+      configurable: true
+    });
+
+    await loginWithPassword("secret-password", "operator");
+
+    expect(capturedBody).toEqual({
+      username: "operator",
+      password: "secret-password"
+    });
+    expect(getApiAuthToken()).toBe("api-token");
+    expect(isAuthenticated()).toBe(true);
+  });
+
+  it("falls back to the configured default API username when the username is blank", async function () {
+    var capturedBody = null;
+    globalThis.ERP_ADMIN_USERNAME = "configured-admin";
+    Object.defineProperty(globalThis, "location", {
+      value: { protocol: "http:" },
+      configurable: true
+    });
+    Object.defineProperty(globalThis, "fetch", {
+      value: function (url, options) {
+        capturedBody = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: function () {
+            return Promise.resolve(JSON.stringify({ token: "api-token" }));
+          }
+        });
+      },
+      configurable: true
+    });
+
+    expect(getAuthUsernameDefault()).toBe("configured-admin");
+    await loginWithPassword("secret-password", " ");
+
+    expect(capturedBody.username).toBe("configured-admin");
+  });
+
   it("sets up a local password without storing plain text", async function () {
     await setupPassword("1234", "1234");
     var raw = globalThis.localStorage.getItem(AUTH_STORAGE_KEY);

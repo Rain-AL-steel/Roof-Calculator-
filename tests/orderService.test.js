@@ -16,6 +16,7 @@ import {
   upsertOrder,
   upsertOrderWithApiFallback
 } from "../src/scripts/services/orderService.js";
+import { clearApiAuth, getApiAuthToken, loginToApi } from "../src/scripts/services/apiClient.js";
 
 var originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
 var originalLocationDescriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
@@ -102,6 +103,7 @@ afterEach(function () {
   restoreGlobalProperty("location", originalLocationDescriptor);
   delete globalThis.ERP_API_BASE_URL;
   delete globalThis.__ERP_API_BASE_URL__;
+  clearApiAuth();
 });
 
 describe("order service", function () {
@@ -257,6 +259,51 @@ describe("order service", function () {
 
     expect(requestedUrl).toBe("http://127.0.0.1:3001/api/orders");
     expect(orders[0].id).toBe("api-origin");
+  });
+
+  it("saves API login tokens and sends bearer authorization on later requests", async function () {
+    var requestedAuthHeader = "";
+    useHttpApiRuntime(function (url, options) {
+      if (url === "/api/auth/login") {
+        var body = JSON.parse(options.body);
+        expect(body.username).toBe("admin");
+        expect(body.password).toBe("secret");
+        return jsonResponse({
+          token: "jwt-token",
+          tokenType: "Bearer",
+          user: { username: "admin", roles: ["ADMIN"] }
+        });
+      }
+      requestedAuthHeader = options.headers.Authorization;
+      return jsonResponse({ orders: [] });
+    });
+
+    await loginToApi("admin", "secret");
+    await loadOrdersWithApiFallback();
+
+    expect(getApiAuthToken()).toBe("jwt-token");
+    expect(requestedAuthHeader).toBe("Bearer jwt-token");
+  });
+
+  it("clears API login tokens when the API returns 401", async function () {
+    useHttpApiRuntime(function (url) {
+      if (url === "/api/auth/login") {
+        return jsonResponse({ token: "expired-token", tokenType: "Bearer" });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 401,
+        text: function () {
+          return Promise.resolve(JSON.stringify({ code: "AUTH_INVALID", message: "expired" }));
+        }
+      });
+    });
+
+    await loginToApi("admin", "secret");
+    var orders = await loadOrdersWithApiFallback();
+
+    expect(orders).toHaveLength(0);
+    expect(getApiAuthToken()).toBe("");
   });
 
   it("saves orders through the API when available and caches the response locally", async function () {

@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { prisma as defaultPrisma } from "./prisma.js";
+import { findUserForLogin, getJwtExpiresIn, getJwtSecret, signAuthToken, toAuthUser, verifyAuthToken, verifyPassword } from "./auth.js";
 import { buildOrderPayload, createOrderNo, getOrderInclude, toFrontendOrder } from "./orderMapper.js";
 
 const DEFAULT_CORS_ORIGINS = [
@@ -96,6 +97,44 @@ function createHttpError(statusCode, code, message) {
   error.statusCode = statusCode;
   error.code = code;
   return error;
+}
+
+function getBearerToken(req) {
+  var header = String(req.headers.authorization || "");
+  var match = /^Bearer\s+(.+)$/i.exec(header);
+  return match ? match[1].trim() : "";
+}
+
+function createAuthMiddleware(options) {
+  return function (req, res, next) {
+    var secret = getJwtSecret(options);
+    if (!secret) {
+      res.status(500).json({
+        code: "JWT_SECRET_NOT_CONFIGURED",
+        message: "JWT secret is not configured."
+      });
+      return;
+    }
+
+    var token = getBearerToken(req);
+    if (!token) {
+      res.status(401).json({
+        code: "AUTH_REQUIRED",
+        message: "Authorization bearer token is required."
+      });
+      return;
+    }
+
+    try {
+      req.user = verifyAuthToken(token, secret);
+      next();
+    } catch (error) {
+      res.status(401).json({
+        code: "AUTH_INVALID",
+        message: "Authorization token is invalid or expired."
+      });
+    }
+  };
 }
 
 function sleep(ms) {
@@ -320,6 +359,10 @@ async function attachMapLocationAfterSave(prisma, operation, input, payload, sav
 export function createApp(options) {
   var prisma = options && options.prisma ? options.prisma : defaultPrisma;
   var app = express();
+  var authOptions = {
+    jwtSecret: getJwtSecret(options),
+    jwtExpiresIn: getJwtExpiresIn(options)
+  };
 
   app.use(cors(createCorsOptions()));
   app.use(express.json({ limit: "2mb" }));
@@ -327,6 +370,50 @@ export function createApp(options) {
   app.get("/api/health", function (req, res) {
     res.json({ ok: true, service: "roof-calculator-api" });
   });
+
+  app.post("/api/auth/login", asyncHandler(async function (req, res) {
+    var secret = getJwtSecret(authOptions);
+    if (!secret) {
+      throw createHttpError(500, "JWT_SECRET_NOT_CONFIGURED", "JWT secret is not configured.");
+    }
+
+    var input = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    var username = compactLogText(input.username);
+    var password = String(input.password || "");
+    if (!username || !password) {
+      throw createHttpError(400, "INVALID_LOGIN_PAYLOAD", "Username and password are required.");
+    }
+
+    var user = await withDatabaseRetry("POST /api/auth/login", function () {
+      return findUserForLogin(prisma, username);
+    });
+    if (!user || user.isActive === false || !(await verifyPassword(password, user.passwordHash))) {
+      throw createHttpError(401, "INVALID_CREDENTIALS", "Username or password is incorrect.");
+    }
+
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() }
+      });
+    } catch (error) {
+      console.warn("[login-last-login-skip]", {
+        userId: user.id,
+        name: error && error.name ? error.name : "Error",
+        code: error && error.code ? error.code : undefined,
+        message: redactSensitiveText(error && error.message ? error.message : "Last login update failed.")
+      });
+    }
+
+    res.json({
+      token: signAuthToken(user, secret, authOptions.jwtExpiresIn),
+      tokenType: "Bearer",
+      expiresIn: authOptions.jwtExpiresIn,
+      user: toAuthUser(user)
+    });
+  }));
+
+  app.use("/api/orders", createAuthMiddleware(authOptions));
 
   app.get("/api/orders", asyncHandler(async function (req, res) {
     var orders = await withDatabaseRetry("GET /api/orders", function () {

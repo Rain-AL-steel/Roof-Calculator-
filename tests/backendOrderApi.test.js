@@ -1,7 +1,26 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../backend/src/app.js";
+import { hashPassword, signAuthToken, verifyAuthToken } from "../backend/src/auth.js";
 
 var activeServers = [];
+var TEST_JWT_SECRET = "test-jwt-secret-for-order-api";
+
+function authHeaders(extra) {
+  return Object.assign({
+    Authorization: "Bearer " + signAuthToken({
+      id: "test-user-id",
+      username: "admin",
+      roles: [{ role: { code: "ADMIN" } }]
+    }, TEST_JWT_SECRET, "1h")
+  }, extra || {});
+}
+
+function createTestApp(mock) {
+  return createApp({
+    prisma: mock.prisma,
+    jwtSecret: TEST_JWT_SECRET
+  });
+}
 
 function listen(app) {
   return new Promise(function (resolve) {
@@ -70,11 +89,17 @@ function createMockPrisma() {
   };
   var ordersById = {};
   var ordersByClientOrderId = {};
+  var usersByUsername = {};
 
   function storeOrder(order) {
     ordersById[order.id] = order;
     if (order.clientOrderId) ordersByClientOrderId[order.clientOrderId] = order;
     return order;
+  }
+
+  function storeUser(user) {
+    usersByUsername[user.username] = user;
+    return user;
   }
 
   function findOrder(args) {
@@ -164,8 +189,25 @@ function createMockPrisma() {
     captured: captured,
     ordersById: ordersById,
     ordersByClientOrderId: ordersByClientOrderId,
+    usersByUsername: usersByUsername,
     storeOrder: storeOrder,
+    storeUser: storeUser,
     prisma: {
+      user: {
+        findUnique: async function (args) {
+          captured.userFindUniqueArgs = captured.userFindUniqueArgs || [];
+          captured.userFindUniqueArgs.push(args);
+          return usersByUsername[args.where.username] || null;
+        },
+        update: async function (args) {
+          captured.userUpdateArgs = args;
+          var user = Object.values(usersByUsername).find(function (item) {
+            return item.id === args.where.id;
+          });
+          if (user) user.lastLoginAt = args.data.lastLoginAt;
+          return user;
+        }
+      },
       order: {
         findUnique: async function (args) {
           captured.rootFindUniqueArgs = captured.rootFindUniqueArgs || [];
@@ -232,6 +274,55 @@ function createFrontendPayload() {
 }
 
 describe("backend order API", function () {
+  it("allows health checks without authentication", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/health");
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+  });
+
+  it("logs in with an active bcrypt admin account and returns a JWT", async function () {
+    var mock = createMockPrisma();
+    mock.storeUser({
+      id: "admin-user-id",
+      username: "admin",
+      displayName: "Admin",
+      passwordHash: await hashPassword("correct-password"),
+      isActive: true,
+      roles: [{ role: { code: "ADMIN" } }]
+    });
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "correct-password" })
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.token).toBeTruthy();
+    expect(body.tokenType).toBe("Bearer");
+    expect(body.user.username).toBe("admin");
+    expect(body.user.roles).toEqual(["ADMIN"]);
+    expect(verifyAuthToken(body.token, TEST_JWT_SECRET).sub).toBe("admin-user-id");
+  });
+
+  it("rejects order API requests without a bearer token", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders");
+    var body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.code).toBe("AUTH_REQUIRED");
+  });
+
   it("returns a single order by id", async function () {
     var mock = createMockPrisma();
     var existing = mock.storeOrder(createDbOrder({
@@ -251,9 +342,11 @@ describe("backend order API", function () {
       otherTileAmount: 0,
       grandAmount: 2
     }));
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
 
-    var response = await fetch(serverInfo.url + "/api/orders/" + existing.id);
+    var response = await fetch(serverInfo.url + "/api/orders/" + existing.id, {
+      headers: authHeaders()
+    });
     var body = await response.json();
 
     expect(response.status).toBe(200);
@@ -265,12 +358,12 @@ describe("backend order API", function () {
 
   it("creates a new order from the frontend payload without using client ids or blank rows", async function () {
     var mock = createMockPrisma();
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
     var payload = createFrontendPayload();
 
     var response = await fetch(serverInfo.url + "/api/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload)
     });
     var body = await response.json();
@@ -293,7 +386,7 @@ describe("backend order API", function () {
 
   it("prefers an explicit clientOrderId over the frontend id for create idempotency", async function () {
     var mock = createMockPrisma();
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
     var payload = Object.assign(createFrontendPayload(), {
       id: "frontend-runtime-id",
       clientOrderId: "explicit-client-order-id"
@@ -301,7 +394,7 @@ describe("backend order API", function () {
 
     var response = await fetch(serverInfo.url + "/api/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload)
     });
     var body = await response.json();
@@ -317,12 +410,12 @@ describe("backend order API", function () {
     mock.prisma.$transaction = async function () {
       throw new Error("Database should not be called for invalid orderDate.");
     };
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
     var payload = Object.assign(createFrontendPayload(), { orderDate: "2026/13/40" });
 
     var response = await fetch(serverInfo.url + "/api/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload)
     });
     var body = await response.json();
@@ -342,11 +435,11 @@ describe("backend order API", function () {
       error.code = "P2028";
       throw error;
     };
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
 
     var response = await fetch(serverInfo.url + "/api/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(createFrontendPayload())
     });
     var body = await response.json();
@@ -385,11 +478,11 @@ describe("backend order API", function () {
       error.meta = { target: ["clientOrderId"] };
       throw error;
     };
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
 
     var response = await fetch(serverInfo.url + "/api/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload)
     });
     var body = await response.json();
@@ -420,7 +513,7 @@ describe("backend order API", function () {
       grandAmount: 14,
       mainRows: [{ lengthsText: "1", totalQty: 1, actual: 1, area: 1 }]
     }));
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
     var payload = Object.assign(createFrontendPayload(), {
       id: "client-should-not-replace-server-id",
       orderNo: "ORD-SHOULD-NOT-REPLACE",
@@ -445,7 +538,7 @@ describe("backend order API", function () {
 
     var response = await fetch(serverInfo.url + "/api/orders/" + existing.id, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload)
     });
     var body = await response.json();
@@ -482,11 +575,11 @@ describe("backend order API", function () {
       error.code = "P2028";
       throw error;
     };
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
 
     var response = await fetch(serverInfo.url + "/api/orders/server-order-update", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(createFrontendPayload())
     });
     var body = await response.json();
@@ -516,9 +609,12 @@ describe("backend order API", function () {
       otherTileAmount: 0,
       grandAmount: 0
     }));
-    var serverInfo = await listen(createApp({ prisma: mock.prisma }));
+    var serverInfo = await listen(createTestApp(mock));
 
-    var response = await fetch(serverInfo.url + "/api/orders/" + existing.id, { method: "DELETE" });
+    var response = await fetch(serverInfo.url + "/api/orders/" + existing.id, {
+      method: "DELETE",
+      headers: authHeaders()
+    });
     var body = await response.json();
 
     expect(response.status).toBe(200);
