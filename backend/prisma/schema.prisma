@@ -74,6 +74,7 @@ model Order {
   updatedById        String?
   clientOrderId      String?           @unique
   lineItems          OrderLineItem[]
+  mapImage           OrderImage?
   mainRows           OrderMainRow[]
   createdBy          User?             @relation("OrderCreatedBy", fields: [createdById], references: [id])
   mapLocationCache   MapLocationCache? @relation(fields: [mapLocationCacheId], references: [id])
@@ -83,6 +84,21 @@ model Order {
   @@index([customerName])
   @@index([mapLocationCacheId])
   @@map("orders")
+}
+
+model OrderImage {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orderId   String   @unique
+  mimeType  String   @db.VarChar(64)
+  sizeBytes Int
+  data      Bytes
+  width     Int?
+  height    Int?
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_images")
 }
 
 model OrderMainRow {

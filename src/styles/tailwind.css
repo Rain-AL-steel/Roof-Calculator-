@@ -750,27 +750,50 @@
   }
 
   .order-list {
-    @apply grid gap-2;
+    @apply grid gap-3;
+  }
+
+  .recent-orders-panel .section-head {
+    @apply items-start;
+  }
+
+  .recent-orders-panel .section-head > div {
+    @apply min-w-0;
   }
 
   .order-card {
-    @apply grid gap-2 rounded-app border border-app-line bg-app-surface-soft p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center;
+    @apply grid min-w-0 gap-3 rounded-app border border-app-line bg-app-surface-soft p-3.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center;
   }
 
-  .order-card strong {
-    @apply block font-black;
+  .order-card-main {
+    @apply grid min-w-0 gap-1;
   }
 
-  .order-card span {
-    @apply text-[0.84rem] font-extrabold text-app-muted;
+  .order-card-title {
+    @apply block text-[1rem] font-black leading-[1.18] text-app-text md:text-[1.04rem];
+    overflow-wrap: anywhere;
   }
 
-  .order-card-metrics {
-    @apply flex flex-wrap gap-2 md:justify-end;
+  .order-card-meta {
+    @apply block text-[0.78rem] font-extrabold leading-[1.4] text-app-muted;
+    overflow-wrap: anywhere;
   }
 
-  .order-card-metrics span {
-    @apply rounded-[10px] border border-app-line bg-white px-2.5 py-1.5 font-mono font-black text-app-text;
+  .order-card-facts {
+    @apply grid min-w-0 grid-cols-1 gap-2 md:flex md:flex-wrap md:justify-end;
+  }
+
+  .order-card-fact {
+    @apply grid min-w-0 gap-1 rounded-[12px] border border-app-line bg-white px-3 py-2 md:min-w-[116px];
+  }
+
+  .order-card-label {
+    @apply text-[0.72rem] font-black leading-none text-app-muted;
+  }
+
+  .order-card-value {
+    @apply block text-[0.92rem] font-black leading-[1.22] text-app-text;
+    overflow-wrap: anywhere;
   }
 
   .trend-panel {
@@ -1027,10 +1050,23 @@
 
   .order-map-info dd {
     @apply m-0 font-mono text-[0.82rem] font-black text-app-text;
+    overflow-wrap: anywhere;
   }
 
   .order-map-info .address {
     @apply text-app-text;
+  }
+
+  .order-map-info-image {
+    @apply mt-2 overflow-hidden rounded-[10px] border border-app-line bg-white;
+  }
+
+  .order-map-info-image img {
+    @apply block h-[92px] w-full object-cover;
+  }
+
+  .order-map-info-image.is-empty {
+    @apply flex min-h-[76px] items-center justify-center px-3 py-2 text-center text-[0.74rem] font-extrabold text-app-muted;
   }
 
   .history-filters {
@@ -1105,6 +1141,58 @@
 
   .detail-section h3 {
     @apply m-0 text-[0.96rem] font-black;
+  }
+
+  .order-map-image-section {
+    @apply rounded-app border border-app-line bg-app-surface-soft p-3;
+  }
+
+  .map-image-head {
+    @apply flex flex-wrap items-center justify-between gap-2;
+  }
+
+  .map-image-status {
+    @apply inline-flex min-h-7 items-center rounded-[9px] border border-app-line bg-white px-2 py-0.5 text-[0.72rem] font-black text-app-muted;
+  }
+
+  .map-image-status.is-ready {
+    @apply border-app-primary/30 text-app-primary;
+  }
+
+  .map-image-status.is-loading {
+    @apply border-app-accent/30 text-app-accent;
+  }
+
+  .map-image-status.is-error {
+    @apply border-app-danger/30 text-app-danger;
+  }
+
+  .map-image-preview {
+    @apply mt-3 flex min-h-[150px] items-center justify-center overflow-hidden rounded-app border border-app-line bg-white;
+  }
+
+  .map-image-preview img {
+    @apply block max-h-[220px] w-full object-cover;
+  }
+
+  .map-image-placeholder {
+    @apply px-3 py-8 text-center text-[0.84rem] font-extrabold text-app-muted;
+  }
+
+  .map-image-actions {
+    @apply mt-3;
+  }
+
+  .map-image-upload-trigger {
+    @apply cursor-pointer;
+  }
+
+  .order-map-image-section.is-busy .map-image-upload-trigger {
+    @apply pointer-events-none opacity-60;
+  }
+
+  .map-image-note {
+    @apply mb-0 mt-3 rounded-app border border-dashed border-app-line bg-white px-3 py-2 text-[0.82rem] font-extrabold leading-[1.45] text-app-muted;
   }
 
   .detail-remark {

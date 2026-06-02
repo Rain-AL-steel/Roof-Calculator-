@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import express from "express";
 import cors from "cors";
+import multer from "multer";
 import { prisma as defaultPrisma } from "./prisma.js";
 import { createRequestMetrics, roundMetric, runOutsideRequestMetrics, runWithRequestMetrics } from "./requestContext.js";
 import { findUserForLogin, getJwtExpiresIn, getJwtSecret, signAuthToken, toAuthUser, verifyAuthToken, verifyPassword } from "./auth.js";
@@ -11,6 +12,12 @@ const DEFAULT_CORS_ORIGINS = [
   "http://127.0.0.1:5173",
   "http://localhost:5173"
 ];
+const ORDER_MAP_IMAGE_MAX_BYTES = 500 * 1024;
+const ORDER_MAP_IMAGE_ALLOWED_TYPES = {
+  "image/jpeg": true,
+  "image/png": true,
+  "image/webp": true
+};
 
 function parseCorsOrigins(value) {
   return String(value || "")
@@ -100,6 +107,73 @@ function createHttpError(statusCode, code, message) {
   error.statusCode = statusCode;
   error.code = code;
   return error;
+}
+
+function createOrderMapImageUpload() {
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: ORDER_MAP_IMAGE_MAX_BYTES,
+      files: 1
+    },
+    fileFilter: function (req, file, callback) {
+      var mimeType = String(file && file.mimetype || "").toLowerCase();
+      if (ORDER_MAP_IMAGE_ALLOWED_TYPES[mimeType]) {
+        callback(null, true);
+        return;
+      }
+      callback(createHttpError(400, "INVALID_IMAGE_TYPE", "Only jpg, jpeg, png, and webp images are allowed."));
+    }
+  }).single("image");
+}
+
+var orderMapImageUpload = createOrderMapImageUpload();
+
+function normalizeUploadError(error) {
+  if (!error) return null;
+  if (error instanceof multer.MulterError) {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return createHttpError(413, "IMAGE_TOO_LARGE", "Image must be 500KB or smaller.");
+    }
+    if (error.code === "LIMIT_UNEXPECTED_FILE") {
+      return createHttpError(400, "INVALID_IMAGE_FIELD", "Image upload field must be named image.");
+    }
+    return createHttpError(400, "INVALID_IMAGE_UPLOAD", "Image upload failed.");
+  }
+  return error;
+}
+
+function runOrderMapImageUpload(req, res) {
+  return new Promise(function (resolve, reject) {
+    orderMapImageUpload(req, res, function (error) {
+      var normalizedError = normalizeUploadError(error);
+      if (normalizedError) reject(normalizedError);
+      else resolve();
+    });
+  });
+}
+
+function isAllowedOrderMapImage(file) {
+  return Boolean(file && ORDER_MAP_IMAGE_ALLOWED_TYPES[String(file.mimetype || "").toLowerCase()]);
+}
+
+function optionalImageDimension(value) {
+  if (value === undefined || value === null || value === "") return null;
+  var number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.round(number);
+}
+
+function getOrderMapImageMeta(image) {
+  return {
+    id: image.id,
+    orderId: image.orderId,
+    mimeType: image.mimeType,
+    sizeBytes: image.sizeBytes,
+    width: image.width || null,
+    height: image.height || null,
+    updatedAt: image.updatedAt instanceof Date ? image.updatedAt.toISOString() : String(image.updatedAt || "")
+  };
 }
 
 function createRequestId() {
@@ -485,6 +559,106 @@ export function createApp(options) {
   }));
 
   app.use("/api/orders", createAuthMiddleware(authOptions));
+
+  app.post("/api/orders/:id/map-image", asyncHandler(async function (req, res) {
+    var orderId = String(req.params.id || "").trim();
+    await runOrderMapImageUpload(req, res);
+    var file = req.file;
+    if (!file) {
+      throw createHttpError(400, "IMAGE_REQUIRED", "Image file is required.");
+    }
+    if (!isAllowedOrderMapImage(file)) {
+      throw createHttpError(400, "INVALID_IMAGE_TYPE", "Only jpg, jpeg, png, and webp images are allowed.");
+    }
+    if (!file.buffer || file.size > ORDER_MAP_IMAGE_MAX_BYTES) {
+      throw createHttpError(413, "IMAGE_TOO_LARGE", "Image must be 500KB or smaller.");
+    }
+
+    var order = await withDatabaseRetry("POST /api/orders/:id/map-image order lookup", function () {
+      return prisma.order.findUnique({
+        where: { id: orderId },
+        select: { id: true }
+      });
+    });
+    if (!order) {
+      throw createHttpError(404, "ORDER_NOT_FOUND", "Order was not found.");
+    }
+
+    var image = await withDatabaseRetry("POST /api/orders/:id/map-image", function () {
+      return prisma.orderImage.upsert({
+        where: { orderId: order.id },
+        update: {
+          mimeType: file.mimetype,
+          sizeBytes: file.size,
+          data: file.buffer,
+          width: optionalImageDimension(req.body && req.body.width),
+          height: optionalImageDimension(req.body && req.body.height)
+        },
+        create: {
+          orderId: order.id,
+          mimeType: file.mimetype,
+          sizeBytes: file.size,
+          data: file.buffer,
+          width: optionalImageDimension(req.body && req.body.width),
+          height: optionalImageDimension(req.body && req.body.height)
+        },
+        select: {
+          id: true,
+          orderId: true,
+          mimeType: true,
+          sizeBytes: true,
+          width: true,
+          height: true,
+          updatedAt: true
+        }
+      });
+    });
+
+    res.json({ ok: true, image: getOrderMapImageMeta(image) });
+  }));
+
+  app.get("/api/orders/:id/map-image", asyncHandler(async function (req, res) {
+    var orderId = String(req.params.id || "").trim();
+    var image = await withDatabaseRetry("GET /api/orders/:id/map-image", function () {
+      return prisma.orderImage.findUnique({
+        where: { orderId: orderId },
+        select: {
+          mimeType: true,
+          sizeBytes: true,
+          data: true
+        }
+      });
+    });
+    if (!image) {
+      throw createHttpError(404, "ORDER_IMAGE_NOT_FOUND", "Order map image was not found.");
+    }
+
+    var buffer = Buffer.from(image.data);
+    res.setHeader("Content-Type", image.mimeType);
+    res.setHeader("Content-Length", String(buffer.length || image.sizeBytes || 0));
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).end(buffer);
+  }));
+
+  app.delete("/api/orders/:id/map-image", asyncHandler(async function (req, res) {
+    var orderId = String(req.params.id || "").trim();
+    var order = await withDatabaseRetry("DELETE /api/orders/:id/map-image order lookup", function () {
+      return prisma.order.findUnique({
+        where: { id: orderId },
+        select: { id: true }
+      });
+    });
+    if (!order) {
+      throw createHttpError(404, "ORDER_NOT_FOUND", "Order was not found.");
+    }
+
+    var result = await withDatabaseRetry("DELETE /api/orders/:id/map-image", function () {
+      return prisma.orderImage.deleteMany({
+        where: { orderId: order.id }
+      });
+    });
+    res.json({ ok: true, deleted: Boolean(result && result.count) });
+  }));
 
   app.get("/api/orders", asyncHandler(async function (req, res) {
     var orders = await withDatabaseRetry("GET /api/orders", function () {

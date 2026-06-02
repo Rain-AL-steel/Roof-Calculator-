@@ -90,6 +90,7 @@ function createMockPrisma() {
   };
   var ordersById = {};
   var ordersByClientOrderId = {};
+  var mapImagesByOrderId = {};
   var usersByUsername = {};
 
   function storeOrder(order) {
@@ -101,6 +102,11 @@ function createMockPrisma() {
   function storeUser(user) {
     usersByUsername[user.username] = user;
     return user;
+  }
+
+  function storeMapImage(image) {
+    mapImagesByOrderId[image.orderId] = image;
+    return image;
   }
 
   function recordMockPrismaQuery() {
@@ -140,6 +146,7 @@ function createMockPrisma() {
         if (existing) {
           delete ordersById[args.where.id];
           if (existing.clientOrderId) delete ordersByClientOrderId[existing.clientOrderId];
+          delete mapImagesByOrderId[existing.id];
         }
         return existing;
       }
@@ -203,9 +210,11 @@ function createMockPrisma() {
     captured: captured,
     ordersById: ordersById,
     ordersByClientOrderId: ordersByClientOrderId,
+    mapImagesByOrderId: mapImagesByOrderId,
     usersByUsername: usersByUsername,
     storeOrder: storeOrder,
     storeUser: storeUser,
+    storeMapImage: storeMapImage,
     prisma: {
       user: {
         findUnique: async function (args) {
@@ -246,8 +255,42 @@ function createMockPrisma() {
         delete: async function (args) {
           recordMockPrismaQuery();
           var existing = ordersById[args.where.id];
-          if (existing) delete ordersById[args.where.id];
+          if (existing) {
+            delete ordersById[args.where.id];
+            delete mapImagesByOrderId[existing.id];
+          }
           return existing;
+        }
+      },
+      orderImage: {
+        findUnique: async function (args) {
+          recordMockPrismaQuery();
+          captured.orderImageFindUniqueArgs = captured.orderImageFindUniqueArgs || [];
+          captured.orderImageFindUniqueArgs.push(args);
+          if (args.where.orderId) return mapImagesByOrderId[args.where.orderId] || null;
+          return null;
+        },
+        upsert: async function (args) {
+          recordMockPrismaQuery();
+          captured.orderImageUpsertArgs = args;
+          var existing = mapImagesByOrderId[args.where.orderId];
+          var data = existing ? Object.assign({}, existing, args.update) : Object.assign({
+            id: "map-image-" + args.where.orderId,
+            createdAt: new Date("2026-05-30T00:00:00.000Z")
+          }, args.create);
+          data.updatedAt = new Date("2026-05-30T00:00:02.000Z");
+          data.sizeBytes = Number(data.sizeBytes);
+          return storeMapImage(data);
+        },
+        deleteMany: async function (args) {
+          recordMockPrismaQuery();
+          captured.orderImageDeleteManyArgs = args;
+          var existing = mapImagesByOrderId[args.where.orderId];
+          if (existing) {
+            delete mapImagesByOrderId[args.where.orderId];
+            return { count: 1 };
+          }
+          return { count: 0 };
         }
       },
       $queryRaw: async function () {
@@ -298,6 +341,13 @@ function createFrontendPayload() {
     },
     updatedAt: "2026-05-30T10:57:01.419Z"
   };
+}
+
+function createImageForm(mimeType, bytes, fileName) {
+  var form = new FormData();
+  var content = typeof bytes === "number" ? new Uint8Array(bytes).fill(65) : bytes;
+  form.append("image", new Blob([content], { type: mimeType }), fileName || "map-image");
+  return form;
 }
 
 describe("backend order API", function () {
@@ -520,6 +570,204 @@ describe("backend order API", function () {
 
     expect(response.status).toBe(401);
     expect(body.code).toBe("AUTH_REQUIRED");
+  });
+
+  it("rejects order map image API requests without a bearer token", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var getResponse = await fetch(serverInfo.url + "/api/orders/order-1/map-image");
+    var postResponse = await fetch(serverInfo.url + "/api/orders/order-1/map-image", {
+      method: "POST",
+      body: createImageForm("image/png", new Uint8Array([1]), "map.png")
+    });
+    var deleteResponse = await fetch(serverInfo.url + "/api/orders/order-1/map-image", {
+      method: "DELETE"
+    });
+
+    expect(getResponse.status).toBe(401);
+    expect((await getResponse.json()).code).toBe("AUTH_REQUIRED");
+    expect(postResponse.status).toBe(401);
+    expect((await postResponse.json()).code).toBe("AUTH_REQUIRED");
+    expect(deleteResponse.status).toBe(401);
+    expect((await deleteResponse.json()).code).toBe("AUTH_REQUIRED");
+  });
+
+  it("returns 404 when uploading a map image for a missing order", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders/missing-order/map-image", {
+      method: "POST",
+      headers: authHeaders(),
+      body: createImageForm("image/png", new Uint8Array([1, 2, 3]), "map.png")
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.code).toBe("ORDER_NOT_FOUND");
+  });
+
+  it("rejects unsupported map image MIME types", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({
+      id: "image-type-order",
+      orderNo: "ORD-IMAGE-TYPE",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders/image-type-order/map-image", {
+      method: "POST",
+      headers: authHeaders(),
+      body: createImageForm("text/plain", new Uint8Array([1, 2, 3]), "map.txt")
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_IMAGE_TYPE");
+  });
+
+  it("rejects map images larger than 500KB", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({
+      id: "large-image-order",
+      orderNo: "ORD-LARGE-IMAGE",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders/large-image-order/map-image", {
+      method: "POST",
+      headers: authHeaders(),
+      body: createImageForm("image/png", 512001, "large-map.png")
+    });
+    var body = await response.json();
+
+    expect([400, 413]).toContain(response.status);
+    expect(body.code).toBe("IMAGE_TOO_LARGE");
+  });
+
+  it("uploads and reads an order map image with the correct content type and binary body", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({
+      id: "image-order",
+      orderNo: "ORD-IMAGE-001",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    var serverInfo = await listen(createTestApp(mock));
+    var bytes = new Uint8Array([137, 80, 78, 71]);
+
+    var uploadResponse = await fetch(serverInfo.url + "/api/orders/image-order/map-image", {
+      method: "POST",
+      headers: authHeaders(),
+      body: createImageForm("image/png", bytes, "map.png")
+    });
+    var uploadBody = await uploadResponse.json();
+    var getResponse = await fetch(serverInfo.url + "/api/orders/image-order/map-image", {
+      headers: authHeaders()
+    });
+    var downloaded = Buffer.from(await getResponse.arrayBuffer());
+
+    expect(uploadResponse.status).toBe(200);
+    expect(uploadBody.ok).toBe(true);
+    expect(uploadBody.image).not.toHaveProperty("data");
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.headers.get("content-type")).toBe("image/png");
+    expect(getResponse.headers.get("content-length")).toBe(String(bytes.length));
+    expect(downloaded).toEqual(Buffer.from(bytes));
+  });
+
+  it("replaces the previous map image when uploading again", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({
+      id: "replace-image-order",
+      orderNo: "ORD-IMAGE-REPLACE",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    var serverInfo = await listen(createTestApp(mock));
+
+    await fetch(serverInfo.url + "/api/orders/replace-image-order/map-image", {
+      method: "POST",
+      headers: authHeaders(),
+      body: createImageForm("image/png", new Uint8Array([1, 2, 3]), "first.png")
+    });
+    var replaceResponse = await fetch(serverInfo.url + "/api/orders/replace-image-order/map-image", {
+      method: "POST",
+      headers: authHeaders(),
+      body: createImageForm("image/webp", new Uint8Array([4, 5]), "second.webp")
+    });
+    var getResponse = await fetch(serverInfo.url + "/api/orders/replace-image-order/map-image", {
+      headers: authHeaders()
+    });
+    var downloaded = Buffer.from(await getResponse.arrayBuffer());
+
+    expect(replaceResponse.status).toBe(200);
+    expect(Object.keys(mock.mapImagesByOrderId)).toHaveLength(1);
+    expect(mock.mapImagesByOrderId["replace-image-order"].mimeType).toBe("image/webp");
+    expect(getResponse.headers.get("content-type")).toBe("image/webp");
+    expect(downloaded).toEqual(Buffer.from([4, 5]));
+  });
+
+  it("deletes an order map image and returns 404 on later reads", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({
+      id: "delete-image-order",
+      orderNo: "ORD-IMAGE-DELETE",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    var serverInfo = await listen(createTestApp(mock));
+
+    await fetch(serverInfo.url + "/api/orders/delete-image-order/map-image", {
+      method: "POST",
+      headers: authHeaders(),
+      body: createImageForm("image/jpeg", new Uint8Array([10, 11]), "map.jpg")
+    });
+    var deleteResponse = await fetch(serverInfo.url + "/api/orders/delete-image-order/map-image", {
+      method: "DELETE",
+      headers: authHeaders()
+    });
+    var deleteBody = await deleteResponse.json();
+    var getResponse = await fetch(serverInfo.url + "/api/orders/delete-image-order/map-image", {
+      headers: authHeaders()
+    });
+    var getBody = await getResponse.json();
+
+    expect(deleteResponse.status).toBe(200);
+    expect(deleteBody).toEqual({ ok: true, deleted: true });
+    expect(getResponse.status).toBe(404);
+    expect(getBody.code).toBe("ORDER_IMAGE_NOT_FOUND");
+  });
+
+  it("does not include map image binary data in the order list response", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({
+      id: "list-image-order",
+      orderNo: "ORD-IMAGE-LIST",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    mock.storeMapImage({
+      id: "list-image",
+      orderId: "list-image-order",
+      mimeType: "image/png",
+      sizeBytes: 3,
+      data: Buffer.from([1, 2, 3]),
+      width: null,
+      height: null,
+      updatedAt: new Date("2026-05-30T00:00:02.000Z")
+    });
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders", {
+      headers: authHeaders()
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.orders).toHaveLength(1);
+    expect(body.orders[0]).not.toHaveProperty("mapImage");
+    expect(body.orders[0]).not.toHaveProperty("data");
+    expect(JSON.stringify(body.orders[0])).not.toContain("AQID");
   });
 
   it("returns a single order by id", async function () {

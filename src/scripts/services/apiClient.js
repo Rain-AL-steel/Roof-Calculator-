@@ -3,6 +3,7 @@ export const API_TIMEOUT_MS = 20000;
 export const ORDER_READ_TIMEOUT_MS = 15000;
 export const ORDER_WRITE_TIMEOUT_MS = 20000;
 export const ORDER_DELETE_TIMEOUT_MS = 20000;
+export const ORDER_MAP_IMAGE_MAX_BYTES = 500 * 1024;
 export const API_AUTH_STORAGE_KEY = "erp_api_auth_v1";
 export const DEFAULT_API_USERNAME = "admin";
 
@@ -124,6 +125,27 @@ function isFormDataBody(value) {
   return typeof FormData !== "undefined" && value instanceof FormData;
 }
 
+function parseApiJson(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return null;
+  }
+}
+
+function createApiError(response, text) {
+  var data = parseApiJson(text);
+  var error = new Error(data && data.message ? data.message : "API request failed with status " + response.status + ".");
+  error.status = response.status;
+  error.code = data && data.code ? data.code : "";
+  if (response.status === 401) {
+    clearApiAuth();
+    emitUnauthorized();
+  }
+  return error;
+}
+
 export function apiRequest(path, options) {
   var fetchApi = getRuntimeFetch();
   if (!fetchApi) return Promise.reject(new Error("Fetch API is not available."));
@@ -141,7 +163,8 @@ export function apiRequest(path, options) {
     }, timeoutMs);
   }
 
-  var headers = Object.assign({ Accept: "application/json" }, requestOptions.headers || {});
+  var responseType = requestOptions.responseType || "json";
+  var headers = Object.assign({ Accept: responseType === "blob" ? "image/*" : "application/json" }, requestOptions.headers || {});
   var token = getApiAuthToken();
   if (token && !headers.Authorization && !headers.authorization) {
     headers.Authorization = "Bearer " + token;
@@ -157,22 +180,18 @@ export function apiRequest(path, options) {
     body: body
   });
   delete fetchOptions.timeoutMs;
+  delete fetchOptions.responseType;
 
   return fetchApi(buildApiUrl(path), fetchOptions).then(function (response) {
     if (timer) clearTimeout(timer);
+    if (responseType === "blob" && response.ok) {
+      return response.blob();
+    }
     return response.text().then(function (text) {
-      var data = text ? JSON.parse(text) : null;
       if (!response.ok) {
-        var error = new Error(data && data.message ? data.message : "API request failed with status " + response.status + ".");
-        error.status = response.status;
-        error.code = data && data.code ? data.code : "";
-        if (response.status === 401) {
-          clearApiAuth();
-          emitUnauthorized();
-        }
-        throw error;
+        throw createApiError(response, text);
       }
-      return data;
+      return parseApiJson(text);
     });
   }).catch(function (error) {
     if (timer) clearTimeout(timer);
@@ -227,6 +246,36 @@ export function updateOrderToApi(orderId, order) {
 export function deleteOrderFromApi(orderId) {
   var id = encodeURIComponent(String(orderId || "").trim());
   return apiRequest("/orders/" + id, {
+    method: "DELETE",
+    timeoutMs: ORDER_DELETE_TIMEOUT_MS
+  });
+}
+
+export function uploadOrderMapImageToApi(orderId, image, meta) {
+  var id = encodeURIComponent(String(orderId || "").trim());
+  var details = meta || {};
+  var form = new FormData();
+  form.append("image", image, details.fileName || "map-image");
+  if (details.width) form.append("width", String(details.width));
+  if (details.height) form.append("height", String(details.height));
+  return apiRequest("/orders/" + id + "/map-image", {
+    method: "POST",
+    timeoutMs: ORDER_WRITE_TIMEOUT_MS,
+    body: form
+  });
+}
+
+export function fetchOrderMapImageBlobFromApi(orderId) {
+  var id = encodeURIComponent(String(orderId || "").trim());
+  return apiRequest("/orders/" + id + "/map-image", {
+    timeoutMs: ORDER_READ_TIMEOUT_MS,
+    responseType: "blob"
+  });
+}
+
+export function deleteOrderMapImageFromApi(orderId) {
+  var id = encodeURIComponent(String(orderId || "").trim());
+  return apiRequest("/orders/" + id + "/map-image", {
     method: "DELETE",
     timeoutMs: ORDER_DELETE_TIMEOUT_MS
   });

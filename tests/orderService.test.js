@@ -16,7 +16,14 @@ import {
   upsertOrder,
   upsertOrderWithApiFallback
 } from "../src/scripts/services/orderService.js";
-import { clearApiAuth, getApiAuthToken, loginToApi } from "../src/scripts/services/apiClient.js";
+import {
+  clearApiAuth,
+  deleteOrderMapImageFromApi,
+  fetchOrderMapImageBlobFromApi,
+  getApiAuthToken,
+  loginToApi,
+  uploadOrderMapImageToApi
+} from "../src/scripts/services/apiClient.js";
 
 var originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
 var originalLocationDescriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
@@ -304,6 +311,76 @@ describe("order service", function () {
 
     expect(orders).toHaveLength(0);
     expect(getApiAuthToken()).toBe("");
+  });
+
+  it("uploads order map images through multipart API requests", async function () {
+    var requestedUrl = "";
+    var requestedOptions = null;
+    useHttpApiRuntime(function (url, options) {
+      requestedUrl = url;
+      requestedOptions = options;
+      return jsonResponse({ ok: true, image: { id: "image-1", orderId: "order 1" } });
+    });
+
+    var payload = await uploadOrderMapImageToApi("order 1", new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }), {
+      fileName: "map.png",
+      width: 640,
+      height: 320
+    });
+
+    expect(requestedUrl).toBe("/api/orders/order%201/map-image");
+    expect(requestedOptions.method).toBe("POST");
+    expect(requestedOptions.headers.Accept).toBe("application/json");
+    expect(requestedOptions.headers["Content-Type"]).toBeUndefined();
+    expect(requestedOptions.body).toBeInstanceOf(FormData);
+    expect(requestedOptions.body.get("image").type).toBe("image/png");
+    expect(requestedOptions.body.get("width")).toBe("640");
+    expect(requestedOptions.body.get("height")).toBe("320");
+    expect(payload.image.id).toBe("image-1");
+  });
+
+  it("reads order map images as blobs with bearer auth support", async function () {
+    var requestedHeaders = null;
+    useHttpApiRuntime(function (url, options) {
+      if (url === "/api/auth/login") {
+        return jsonResponse({ token: "image-token", tokenType: "Bearer" });
+      }
+      requestedHeaders = options.headers;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: function () {
+          return Promise.resolve(new Blob([new Uint8Array([4, 5, 6])], { type: "image/webp" }));
+        },
+        text: function () {
+          throw new Error("blob responses should not be parsed as text");
+        }
+      });
+    });
+
+    await loginToApi("admin", "secret");
+    var blob = await fetchOrderMapImageBlobFromApi("image-order");
+
+    expect(requestedHeaders.Accept).toBe("image/*");
+    expect(requestedHeaders.Authorization).toBe("Bearer image-token");
+    expect(blob.type).toBe("image/webp");
+    expect(blob.size).toBe(3);
+  });
+
+  it("deletes order map images through the API", async function () {
+    var requestedUrl = "";
+    var requestedMethod = "";
+    useHttpApiRuntime(function (url, options) {
+      requestedUrl = url;
+      requestedMethod = options.method;
+      return jsonResponse({ ok: true, deleted: true });
+    });
+
+    var payload = await deleteOrderMapImageFromApi("image-order");
+
+    expect(requestedUrl).toBe("/api/orders/image-order/map-image");
+    expect(requestedMethod).toBe("DELETE");
+    expect(payload.deleted).toBe(true);
   });
 
   it("saves orders through the API when available and caches the response locally", async function () {

@@ -12,6 +12,13 @@ import {
 import { loadConfig, saveConfig, subscribeConfigChange } from "./services/configService.js";
 import { geocodeDeliveryAddress, getAmapSettings, hasUsableAmapSettings, loadAmap } from "./services/amapService.js";
 import {
+  deleteOrderMapImageFromApi,
+  fetchOrderMapImageBlobFromApi,
+  isApiConfigured,
+  ORDER_MAP_IMAGE_MAX_BYTES,
+  uploadOrderMapImageToApi
+} from "./services/apiClient.js";
+import {
   buildExportPayload,
   clearOrdersWithApiFallback,
   deleteOrderWithApiFallback,
@@ -106,8 +113,14 @@ var orderMapState = {
   map: null,
   cluster: null,
   infoWindow: null,
+  infoOrderId: "",
+  infoToken: 0,
   markers: []
 };
+var orderMapImageUrlCache = {};
+var orderMapImageLoadPromises = {};
+var orderMapImageVersions = {};
+var recordMapImagePreviewTokens = {};
 
 function getConfig() {
   return currentConfig;
@@ -212,6 +225,222 @@ function getOrderTitle(order) {
 
 function getOrderCustomer(order) {
   return order.customerName || "未填写客户";
+}
+
+function getOrderAreaDisplay(order) {
+  var area = Number(order && order.totals && order.totals.areaTotal);
+  if (!Number.isFinite(area) || area <= 0) return "面积未填写";
+  return formatArea(area) + " ㎡";
+}
+
+function collectColorValues(value, result) {
+  if (Array.isArray(value)) {
+    value.forEach(function (item) {
+      collectColorValues(item, result);
+    });
+    return;
+  }
+  String(value || "").split(/[、,，;；/|]+/).forEach(function (item) {
+    var text = item.trim();
+    if (text) result.push(text);
+  });
+}
+
+function getOrderColorDisplay(order) {
+  var values = [];
+  var seen = {};
+  var colors = [];
+  collectColorValues(order && order.tileColor, values);
+  values.forEach(function (color) {
+    var key = color.toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+    colors.push(color);
+  });
+  if (!colors.length) return "颜色未填写";
+  return colors.join("、");
+}
+
+function getOrderMapImageOrderId(orderId) {
+  return String(orderId || "").trim();
+}
+
+function isMissingOrderMapImageError(error) {
+  return Boolean(error && error.status === 404 && (!error.code || error.code === "ORDER_IMAGE_NOT_FOUND"));
+}
+
+function getOrderMapImageErrorMessage(error) {
+  if (error && error.code === "IMAGE_TOO_LARGE") return "图片必须小于 500KB。";
+  if (error && error.code === "INVALID_IMAGE_TYPE") return "只支持 JPG、PNG 或 WebP 图片。";
+  return error && error.message ? error.message : "地图展示图片操作失败。";
+}
+
+function revokeOrderMapImageUrl(orderId) {
+  var id = getOrderMapImageOrderId(orderId);
+  var url = id ? orderMapImageUrlCache[id] : "";
+  if (url && typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+    URL.revokeObjectURL(url);
+  }
+  if (id) delete orderMapImageUrlCache[id];
+}
+
+function rememberOrderMapImageUrl(orderId, blob) {
+  var id = getOrderMapImageOrderId(orderId);
+  if (!id || !blob || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return "";
+  revokeOrderMapImageUrl(id);
+  orderMapImageUrlCache[id] = URL.createObjectURL(blob);
+  return orderMapImageUrlCache[id];
+}
+
+function getCachedOrderMapImageUrl(orderId) {
+  var id = getOrderMapImageOrderId(orderId);
+  return id ? orderMapImageUrlCache[id] || "" : "";
+}
+
+function bumpOrderMapImageVersion(orderId) {
+  var id = getOrderMapImageOrderId(orderId);
+  if (!id) return 0;
+  orderMapImageVersions[id] = (orderMapImageVersions[id] || 0) + 1;
+  delete orderMapImageLoadPromises[id];
+  return orderMapImageVersions[id];
+}
+
+function loadOrderMapImageUrl(orderId) {
+  var id = getOrderMapImageOrderId(orderId);
+  if (!id || !isApiConfigured()) return Promise.resolve("");
+  if (orderMapImageUrlCache[id]) return Promise.resolve(orderMapImageUrlCache[id]);
+  if (orderMapImageLoadPromises[id]) return orderMapImageLoadPromises[id];
+  var version = orderMapImageVersions[id] || 0;
+  orderMapImageLoadPromises[id] = fetchOrderMapImageBlobFromApi(id).then(function (blob) {
+    if ((orderMapImageVersions[id] || 0) !== version) return getCachedOrderMapImageUrl(id);
+    if (!blob || !blob.size) return "";
+    return rememberOrderMapImageUrl(id, blob);
+  }).catch(function (error) {
+    if (isMissingOrderMapImageError(error)) return "";
+    throw error;
+  }).finally(function () {
+    delete orderMapImageLoadPromises[id];
+  });
+  return orderMapImageLoadPromises[id];
+}
+
+function isAllowedOrderMapImageFile(file) {
+  var type = String(file && file.type || "").toLowerCase();
+  return type === "image/jpeg" || type === "image/png" || type === "image/webp";
+}
+
+function getOrderMapImageExtension(mimeType) {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
+function getOrderMapImageUploadName(originalName, mimeType) {
+  var baseName = String(originalName || "map-image").replace(/\\/g, "/").split("/").pop().replace(/\.[^.]+$/, "").trim();
+  return (baseName || "map-image") + "." + getOrderMapImageExtension(mimeType);
+}
+
+function loadImageFromFile(file) {
+  return new Promise(function (resolve, reject) {
+    if (typeof Image !== "function" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+      reject(new Error("当前浏览器不支持图片预处理。"));
+      return;
+    }
+    var url = URL.createObjectURL(file);
+    var image = new Image();
+    image.onload = function () {
+      URL.revokeObjectURL(url);
+      resolve({
+        image: image,
+        width: image.naturalWidth || image.width || 0,
+        height: image.naturalHeight || image.height || 0
+      });
+    };
+    image.onerror = function () {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败，请换一张图片。"));
+    };
+    image.src = url;
+  });
+}
+
+function getFittedImageSize(width, height, maxDimension) {
+  var safeWidth = Math.max(1, Number(width) || 1);
+  var safeHeight = Math.max(1, Number(height) || 1);
+  var scale = Math.min(1, maxDimension / Math.max(safeWidth, safeHeight));
+  return {
+    width: Math.max(1, Math.round(safeWidth * scale)),
+    height: Math.max(1, Math.round(safeHeight * scale))
+  };
+}
+
+function drawImageToCanvas(image, size) {
+  var canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  var context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, size.width, size.height);
+  return canvas;
+}
+
+function canvasToBlob(canvas, mimeType, quality) {
+  return new Promise(function (resolve, reject) {
+    canvas.toBlob(function (blob) {
+      if (blob) resolve(blob);
+      else reject(new Error("图片压缩失败，请换一张图片。"));
+    }, mimeType, quality);
+  });
+}
+
+async function compressOrderMapImage(file) {
+  if (!file) throw new Error("请选择一张图片。");
+  if (!isAllowedOrderMapImageFile(file)) throw new Error("只支持 JPG、PNG 或 WebP 图片。");
+
+  var loaded = await loadImageFromFile(file);
+  var sourceWidth = loaded.width;
+  var sourceHeight = loaded.height;
+  var sourceType = String(file.type || "").toLowerCase();
+  if (file.size <= ORDER_MAP_IMAGE_MAX_BYTES) {
+    return {
+      blob: file,
+      fileName: getOrderMapImageUploadName(file.name, sourceType),
+      width: sourceWidth,
+      height: sourceHeight
+    };
+  }
+
+  var maxDimension = Math.min(Math.max(sourceWidth, sourceHeight), 1600);
+  var qualities = [0.86, 0.76, 0.66, 0.56, 0.48];
+  var bestBlob = null;
+  var bestSize = null;
+  while (maxDimension >= 480) {
+    var size = getFittedImageSize(sourceWidth, sourceHeight, maxDimension);
+    var canvas = drawImageToCanvas(loaded.image, size);
+    for (var index = 0; index < qualities.length; index += 1) {
+      var blob = await canvasToBlob(canvas, "image/jpeg", qualities[index]);
+      bestBlob = blob;
+      bestSize = size;
+      if (blob.size <= ORDER_MAP_IMAGE_MAX_BYTES) {
+        return {
+          blob: blob,
+          fileName: getOrderMapImageUploadName(file.name, "image/jpeg"),
+          width: size.width,
+          height: size.height
+        };
+      }
+    }
+    maxDimension = Math.floor(maxDimension * 0.82);
+  }
+
+  if (bestBlob && bestBlob.size <= ORDER_MAP_IMAGE_MAX_BYTES) {
+    return {
+      blob: bestBlob,
+      fileName: getOrderMapImageUploadName(file.name, "image/jpeg"),
+      width: bestSize.width,
+      height: bestSize.height
+    };
+  }
+  throw new Error("图片压缩后仍超过 500KB，请换一张更小的图片。");
 }
 
 function setEmptyNote(el, visible) {
@@ -321,17 +550,42 @@ function ensureOrderMap(AMap, settings) {
   return orderMapState.map;
 }
 
-function getOrderInfoHtml(order) {
+function getOrderMapLocationStatus(order) {
+  return getOrderLocation(order) ? "已定位" : "待定位";
+}
+
+function getOrderMapInfoImageHtml(imageUrl, imageState) {
+  if (imageUrl) {
+    return "<div class='order-map-info-image'><img src='" + escapeHtml(imageUrl) + "' alt='地图展示图片' /></div>";
+  }
+  var text = imageState === "loading" ? "图片读取中..." : "暂无地图展示图片";
+  return "<div class='order-map-info-image is-empty'><span>" + escapeHtml(text) + "</span></div>";
+}
+
+function getOrderInfoHtml(order, imageOptions) {
+  var image = imageOptions || {};
   return "<div class='order-map-info'>" +
-    "<strong>" + escapeHtml(getOrderTitle(order)) + "</strong>" +
-    "<p>" + escapeHtml(getOrderCustomer(order)) + " · " + escapeHtml(order.orderDate) + "</p>" +
+    "<strong>" + escapeHtml(getOrderCustomer(order)) + "</strong>" +
     "<dl>" +
-    "<div><dt>金额</dt><dd>" + formatMoney(order.totals.grandAmount) + " 元</dd></div>" +
-    "<div><dt>面积</dt><dd>" + formatArea(order.totals.areaTotal) + " ㎡</dd></div>" +
+    "<div><dt>面积</dt><dd>" + escapeHtml(getOrderAreaDisplay(order)) + "</dd></div>" +
+    "<div><dt>颜色</dt><dd>" + escapeHtml(getOrderColorDisplay(order)) + "</dd></div>" +
     "<div><dt>建成</dt><dd>" + escapeHtml(formatCompletionMonth(order.completionMonth)) + "</dd></div>" +
+    "<div><dt>状态</dt><dd>" + escapeHtml(getOrderMapLocationStatus(order)) + "</dd></div>" +
     "</dl>" +
     "<p class='address'>" + escapeHtml(getOrderAddress(order) || "未填写收货地址") + "</p>" +
+    getOrderMapInfoImageHtml(image.url, image.state) +
     "</div>";
+}
+
+function refreshOpenOrderInfoForOrder(orderId, imageState) {
+  var id = getOrderMapImageOrderId(orderId);
+  if (!id || orderMapState.infoOrderId !== id || !orderMapState.infoWindow) return;
+  var order = findOrder(id);
+  if (!order) return;
+  orderMapState.infoWindow.setContent(getOrderInfoHtml(order, {
+    url: getCachedOrderMapImageUrl(id),
+    state: imageState || (getCachedOrderMapImageUrl(id) ? "ready" : "none")
+  }));
 }
 
 function openOrderInfo(order, lnglat) {
@@ -341,8 +595,30 @@ function openOrderInfo(order, lnglat) {
       offset: new orderMapState.AMap.Pixel(0, -28)
     });
   }
-  orderMapState.infoWindow.setContent(getOrderInfoHtml(order));
+  var orderId = getOrderMapImageOrderId(order && order.id);
+  var cachedImageUrl = getCachedOrderMapImageUrl(orderId);
+  var infoToken = orderMapState.infoToken + 1;
+  orderMapState.infoToken = infoToken;
+  orderMapState.infoOrderId = orderId;
+  orderMapState.infoWindow.setContent(getOrderInfoHtml(order, {
+    url: cachedImageUrl,
+    state: cachedImageUrl ? "ready" : (isApiConfigured() ? "loading" : "none")
+  }));
   orderMapState.infoWindow.open(orderMapState.map, lnglat);
+  if (!orderId || cachedImageUrl || !isApiConfigured()) return;
+  loadOrderMapImageUrl(orderId).then(function (url) {
+    if (orderMapState.infoToken !== infoToken || orderMapState.infoOrderId !== orderId) return;
+    orderMapState.infoWindow.setContent(getOrderInfoHtml(order, {
+      url: url,
+      state: url ? "ready" : "none"
+    }));
+  }).catch(function () {
+    if (orderMapState.infoToken !== infoToken || orderMapState.infoOrderId !== orderId) return;
+    orderMapState.infoWindow.setContent(getOrderInfoHtml(order, {
+      url: "",
+      state: "error"
+    }));
+  });
 }
 
 function createManualOrderMarkers(AMap, points) {
@@ -568,9 +844,17 @@ function renderDashboard() {
   renderOrderMap(orders);
   setEmptyNote(recentOrderEmpty, stats.recentOrders.length === 0);
   recentOrderList.innerHTML = stats.recentOrders.map(function (order) {
+    var orderMeta = [
+      order.orderDate || "未填写日期",
+      formatCompletionMonth(order.completionMonth)
+    ];
+    if (order.orderNo) orderMeta.push("编号：" + order.orderNo);
     return "<article class='order-card'>" +
-      "<div><strong>" + escapeHtml(getOrderTitle(order)) + "</strong><span>" + escapeHtml(getOrderCustomer(order)) + " · " + escapeHtml(order.orderDate) + " · " + escapeHtml(formatCompletionMonth(order.completionMonth)) + "</span></div>" +
-      "<div class='order-card-metrics'><span>" + formatMoney(order.totals.grandAmount) + " 元</span><span>" + formatArea(order.totals.areaTotal) + " ㎡</span></div>" +
+      "<div class='order-card-main'><strong class='order-card-title'>" + escapeHtml(getOrderCustomer(order)) + "</strong><span class='order-card-meta'>" + escapeHtml(orderMeta.join(" · ")) + "</span></div>" +
+      "<div class='order-card-facts'>" +
+      "<div class='order-card-fact'><span class='order-card-label'>面积</span><strong class='order-card-value'>" + escapeHtml(getOrderAreaDisplay(order)) + "</strong></div>" +
+      "<div class='order-card-fact'><span class='order-card-label'>颜色</span><strong class='order-card-value'>" + escapeHtml(getOrderColorDisplay(order)) + "</strong></div>" +
+      "</div>" +
       "</article>";
   }).join("");
 }
@@ -614,6 +898,153 @@ function renderItemSection(title, headers, rows, renderRow) {
     "</tr></thead><tbody>" + rows.map(renderRow).join("") + "</tbody></table></div></section>";
 }
 
+function renderOrderMapImageSection(order) {
+  var orderId = getOrderMapImageOrderId(order && order.id);
+  var escapedOrderId = escapeHtml(orderId);
+  var disabledContent = "<p class='map-image-note'>当前未连接后端 API，地图展示图片不会保存到 localStorage。</p>";
+  var actions = isApiConfigured() ? (
+    "<div class='record-actions map-image-actions'>" +
+    "<label class='btn btn-soft compact-btn map-image-upload-trigger'><svg class='ui-icon' aria-hidden='true'><use href='#icon-upload'></use></svg><span>上传图片</span><input class='visually-hidden-file' data-map-image-input data-order-id='" + escapedOrderId + "' type='file' accept='image/jpeg,image/png,image/webp' /></label>" +
+    "<button type='button' class='btn btn-danger compact-btn' data-map-image-delete data-order-id='" + escapedOrderId + "' disabled><svg class='ui-icon' aria-hidden='true'><use href='#icon-trash'></use></svg><span>删除图片</span></button>" +
+    "</div>"
+  ) : disabledContent;
+  return "<section class='detail-section order-map-image-section' data-map-image-section data-order-id='" + escapedOrderId + "'>" +
+    "<div class='map-image-head'><h3>地图展示图片</h3><span class='map-image-status' data-map-image-status>" + (isApiConfigured() ? "读取中" : "不可用") + "</span></div>" +
+    "<div class='map-image-preview' data-map-image-preview><div class='map-image-placeholder'>" + (isApiConfigured() ? "图片读取中..." : "暂无图片") + "</div></div>" +
+    actions +
+    "</section>";
+}
+
+function findRecordMapImageSection(orderId) {
+  var id = getOrderMapImageOrderId(orderId);
+  var sections = Array.prototype.slice.call(recordDetailBody.querySelectorAll("[data-map-image-section]"));
+  return sections.find(function (section) {
+    return section.getAttribute("data-order-id") === id;
+  }) || null;
+}
+
+function setRecordMapImageStatus(orderId, text, mode) {
+  var section = findRecordMapImageSection(orderId);
+  var status = section ? section.querySelector("[data-map-image-status]") : null;
+  if (!status) return;
+  status.textContent = text || "";
+  status.className = "map-image-status" + (mode ? " is-" + mode : "");
+}
+
+function setRecordMapImageBusy(orderId, busy) {
+  var section = findRecordMapImageSection(orderId);
+  if (!section) return;
+  Array.prototype.slice.call(section.querySelectorAll("button, input")).forEach(function (control) {
+    control.disabled = Boolean(busy) || (control.hasAttribute("data-map-image-delete") && control.getAttribute("data-has-image") !== "true");
+  });
+  section.classList.toggle("is-busy", Boolean(busy));
+}
+
+function setRecordMapImagePreview(orderId, imageUrl, message) {
+  var section = findRecordMapImageSection(orderId);
+  var preview = section ? section.querySelector("[data-map-image-preview]") : null;
+  var deleteButton = section ? section.querySelector("[data-map-image-delete]") : null;
+  if (!preview) return;
+  if (imageUrl) {
+    preview.innerHTML = "<img src='" + escapeHtml(imageUrl) + "' alt='地图展示图片预览' />";
+    if (deleteButton) {
+      deleteButton.disabled = false;
+      deleteButton.setAttribute("data-has-image", "true");
+    }
+    return;
+  }
+  preview.innerHTML = "<div class='map-image-placeholder'>" + escapeHtml(message || "暂无图片") + "</div>";
+  if (deleteButton) {
+    deleteButton.disabled = true;
+    deleteButton.setAttribute("data-has-image", "false");
+  }
+}
+
+function refreshRecordMapImagePreview(orderId) {
+  var id = getOrderMapImageOrderId(orderId);
+  if (!id || !isApiConfigured()) return;
+  var token = (recordMapImagePreviewTokens[id] || 0) + 1;
+  recordMapImagePreviewTokens[id] = token;
+  setRecordMapImageStatus(id, "读取中", "loading");
+  setRecordMapImagePreview(id, "", "图片读取中...");
+  loadOrderMapImageUrl(id).then(function (url) {
+    if (recordMapImagePreviewTokens[id] !== token) return;
+    if (url) {
+      setRecordMapImagePreview(id, url);
+      setRecordMapImageStatus(id, "已上传", "ready");
+    } else {
+      setRecordMapImagePreview(id, "", "暂无图片");
+      setRecordMapImageStatus(id, "暂无图片", "idle");
+    }
+  }).catch(function (error) {
+    if (recordMapImagePreviewTokens[id] !== token) return;
+    setRecordMapImagePreview(id, "", "图片读取失败");
+    setRecordMapImageStatus(id, "读取失败", "error");
+    console.warn("Order map image preview failed.", {
+      orderId: id,
+      reason: getOrderMapImageErrorMessage(error)
+    });
+  });
+}
+
+function uploadRecordMapImage(orderId, file) {
+  var id = getOrderMapImageOrderId(orderId);
+  if (!id || !file) return;
+  if (!isApiConfigured()) {
+    window.alert("当前未连接后端 API，地图展示图片不会保存到 localStorage。");
+    return;
+  }
+  bumpOrderMapImageVersion(id);
+  recordMapImagePreviewTokens[id] = (recordMapImagePreviewTokens[id] || 0) + 1;
+  setRecordMapImageBusy(id, true);
+  setRecordMapImageStatus(id, "压缩中", "loading");
+  setRecordMapImagePreview(id, "", "图片压缩中...");
+  compressOrderMapImage(file).then(function (prepared) {
+    if (!prepared.blob || prepared.blob.size > ORDER_MAP_IMAGE_MAX_BYTES) {
+      throw new Error("图片必须小于 500KB。");
+    }
+    setRecordMapImageStatus(id, "上传中", "loading");
+    setRecordMapImagePreview(id, "", "图片上传中...");
+    return uploadOrderMapImageToApi(id, prepared.blob, {
+      fileName: prepared.fileName,
+      width: prepared.width,
+      height: prepared.height
+    }).then(function () {
+      var url = rememberOrderMapImageUrl(id, prepared.blob);
+      setRecordMapImagePreview(id, url);
+      setRecordMapImageStatus(id, "已上传", "ready");
+      refreshOpenOrderInfoForOrder(id, "ready");
+    });
+  }).catch(function (error) {
+    setRecordMapImagePreview(id, getCachedOrderMapImageUrl(id), getCachedOrderMapImageUrl(id) ? "" : "上传失败");
+    setRecordMapImageStatus(id, "上传失败", "error");
+    window.alert(getOrderMapImageErrorMessage(error));
+  }).finally(function () {
+    setRecordMapImageBusy(id, false);
+  });
+}
+
+function deleteRecordMapImage(orderId) {
+  var id = getOrderMapImageOrderId(orderId);
+  if (!id || !isApiConfigured()) return;
+  if (!window.confirm("确定删除这张地图展示图片吗？")) return;
+  bumpOrderMapImageVersion(id);
+  recordMapImagePreviewTokens[id] = (recordMapImagePreviewTokens[id] || 0) + 1;
+  setRecordMapImageBusy(id, true);
+  setRecordMapImageStatus(id, "删除中", "loading");
+  deleteOrderMapImageFromApi(id).then(function () {
+    revokeOrderMapImageUrl(id);
+    setRecordMapImagePreview(id, "", "暂无图片");
+    setRecordMapImageStatus(id, "暂无图片", "idle");
+    refreshOpenOrderInfoForOrder(id, "none");
+  }).catch(function (error) {
+    setRecordMapImageStatus(id, "删除失败", "error");
+    window.alert(getOrderMapImageErrorMessage(error));
+  }).finally(function () {
+    setRecordMapImageBusy(id, false);
+  });
+}
+
 function renderRecordDetail(order, mode) {
   recordDetail.hidden = false;
   recordDetailTitle.textContent = mode === "edit" ? "编辑订单" : "订单详情";
@@ -636,8 +1067,10 @@ function renderRecordDetail(order, mode) {
       "<label class='field'><span>钢铁材料</span><input name='steelAmount' type='number' step='0.01' value='" + escapeHtml(order.totals.steelAmount) + "' /></label>" +
       "<label class='field'><span>其他瓦金额</span><input name='otherTileAmount' type='number' step='0.01' value='" + escapeHtml(order.totals.otherTileAmount) + "' /></label>" +
       "</div>" +
+      renderOrderMapImageSection(order) +
       "<div class='record-actions'><button type='submit' class='btn btn-primary'><svg class='ui-icon' aria-hidden='true'><use href='#icon-save'></use></svg><span>保存编辑</span></button><button type='button' class='btn btn-neutral' data-detail-action='view' data-order-id='" + escapeHtml(order.id) + "'>取消</button></div>" +
       "</form>";
+    refreshRecordMapImagePreview(order.id);
     return;
   }
 
@@ -653,6 +1086,7 @@ function renderRecordDetail(order, mode) {
     "<div><span>地图定位</span><strong>" + (getOrderLocation(order) ? "已定位" : "待定位") + "</strong></div>" +
     "</div>" +
     (order.remark ? "<p class='detail-remark'>" + escapeHtml(order.remark) + "</p>" : "") +
+    renderOrderMapImageSection(order) +
     renderItemSection("主瓦", ["长度", "实装节数", "数量", "面积"], items.mainRows, function (row) {
       return "<tr><td>" + escapeHtml(row.lengthsText) + "</td><td>" + escapeHtml(row.actual) + "</td><td>" + escapeHtml(row.totalQty) + "</td><td>" + formatArea(row.area) + "</td></tr>";
     }) +
@@ -666,6 +1100,7 @@ function renderRecordDetail(order, mode) {
       return "<tr><td>" + escapeHtml(item.name) + "</td><td>" + escapeHtml(item.length) + "</td><td>" + escapeHtml(item.qty) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
     }) +
     "<div class='record-actions'><button type='button' class='btn btn-soft' data-detail-action='edit' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-edit'></use></svg><span>编辑记录</span></button><button type='button' class='btn btn-danger' data-detail-action='delete' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-trash'></use></svg><span>删除记录</span></button></div>";
+  refreshRecordMapImagePreview(order.id);
 }
 
 function findOrder(orderId) {
@@ -974,6 +1409,11 @@ historyTableBody.addEventListener("click", function (event) {
 });
 
 recordDetailBody.addEventListener("click", function (event) {
+  var mapImageDeleteButton = event.target.closest("[data-map-image-delete]");
+  if (mapImageDeleteButton) {
+    deleteRecordMapImage(mapImageDeleteButton.getAttribute("data-order-id"));
+    return;
+  }
   var button = event.target.closest("[data-detail-action]");
   if (!button) return;
   var action = button.getAttribute("data-detail-action");
@@ -981,6 +1421,14 @@ recordDetailBody.addEventListener("click", function (event) {
   if (action === "delete") removeOrder(orderId);
   if (action === "view") openRecord(orderId, "view");
   if (action === "edit") openRecord(orderId, "edit");
+});
+
+recordDetailBody.addEventListener("change", function (event) {
+  var input = event.target && event.target.closest ? event.target.closest("[data-map-image-input]") : null;
+  if (!input) return;
+  var file = input.files && input.files[0];
+  if (file) uploadRecordMapImage(input.getAttribute("data-order-id"), file);
+  input.value = "";
 });
 
 recordDetailBody.addEventListener("submit", function (event) {
