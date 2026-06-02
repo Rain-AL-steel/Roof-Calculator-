@@ -1240,11 +1240,61 @@ button:disabled {
   line-height: 1.45;
 }
 
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 3rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  --tw-translate-y: -50%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border-width: 1px;
+  border-color: transparent;
+  background-color: transparent;
+  --tw-text-opacity: 1;
+  color: rgb(123 106 88 / var(--tw-text-opacity, 1));
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, -webkit-backdrop-filter;
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter, -webkit-backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .password-toggle {
+    transition-property: none;
+  }
+}
+
+.password-toggle:hover,
+  .password-toggle[aria-pressed="true"] {
+  --tw-border-opacity: 1;
+  border-color: rgb(234 216 189 / var(--tw-border-opacity, 1));
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 248 239 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(138 74 5 / var(--tw-text-opacity, 1));
+}
+
 button:focus-visible,
   .preset-btn:focus-visible,
   .nav-tab:focus-visible,
   .btn:focus-visible,
-  .icon-btn:focus-visible {
+  .icon-btn:focus-visible,
+  .password-toggle:focus-visible {
   outline-style: solid;
   outline-width: 3px;
   outline-offset: 2px;

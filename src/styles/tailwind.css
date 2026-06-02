@@ -277,11 +277,29 @@
     @apply resize-y leading-[1.45];
   }
 
+  .password-field {
+    @apply relative;
+  }
+
+  .password-field input {
+    @apply pr-12;
+  }
+
+  .password-toggle {
+    @apply absolute right-2 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-[9px] border border-transparent bg-transparent text-app-muted transition duration-200 ease-app-out motion-reduce:transition-none;
+  }
+
+  .password-toggle:hover,
+  .password-toggle[aria-pressed="true"] {
+    @apply border-app-line bg-app-surface-soft text-app-primary-dark;
+  }
+
   button:focus-visible,
   .preset-btn:focus-visible,
   .nav-tab:focus-visible,
   .btn:focus-visible,
-  .icon-btn:focus-visible {
+  .icon-btn:focus-visible,
+  .password-toggle:focus-visible {
     @apply outline outline-[3px] outline-offset-2 outline-app-primary/25;
   }
 

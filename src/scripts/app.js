@@ -40,6 +40,8 @@ var authSubtitle = document.getElementById("authSubtitle");
 var authUsernameField = document.getElementById("authUsernameField");
 var authUsername = document.getElementById("authUsername");
 var authPassword = document.getElementById("authPassword");
+var authPasswordToggle = document.getElementById("authPasswordToggle");
+var authPasswordToggleIcon = document.getElementById("authPasswordToggleIcon");
 var authConfirmField = document.getElementById("authConfirmField");
 var authConfirmPassword = document.getElementById("authConfirmPassword");
 var authSubmit = document.getElementById("authSubmit");
@@ -463,6 +465,20 @@ function hasDraftContent(draft) {
   );
 }
 
+function setAuthPasswordVisible(isVisible) {
+  if (!authPassword) return;
+  var label = isVisible ? "隐藏密码" : "显示密码";
+  authPassword.type = isVisible ? "text" : "password";
+  if (authPasswordToggle) {
+    authPasswordToggle.setAttribute("aria-label", label);
+    authPasswordToggle.setAttribute("aria-pressed", isVisible ? "true" : "false");
+    authPasswordToggle.setAttribute("title", label);
+  }
+  if (authPasswordToggleIcon) {
+    authPasswordToggleIcon.setAttribute("href", isVisible ? "#icon-eye-off" : "#icon-eye");
+  }
+}
+
 function renderAuthGate() {
   var setupMode = !hasAuthSetup();
   var showUsername = !setupMode && isApiAuthConfigured();
@@ -481,6 +497,7 @@ function renderAuthGate() {
   authStatus.classList.remove("is-error", "is-success");
   authPassword.value = "";
   authConfirmPassword.value = "";
+  setAuthPasswordVisible(false);
   setTimeout(function () {
     if (showUsername && authUsername) authUsername.focus();
     else authPassword.focus();
@@ -881,6 +898,14 @@ document.addEventListener("click", function (event) {
     showView(viewButton.getAttribute("data-app-view"));
   }
 });
+
+if (authPasswordToggle) {
+  authPasswordToggle.addEventListener("click", function () {
+    var nextVisible = authPassword && authPassword.type === "password";
+    setAuthPasswordVisible(nextVisible);
+    if (authPassword) authPassword.focus();
+  });
+}
 
 authForm.addEventListener("submit", function (event) {
   event.preventDefault();
