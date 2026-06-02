@@ -10,7 +10,7 @@ import {
   setupPassword
 } from "./services/authService.js";
 import { loadConfig, saveConfig, subscribeConfigChange } from "./services/configService.js";
-import { geocodeDeliveryAddress, getAmapSettings, hasUsableAmapSettings, loadAmap } from "./services/amapService.js";
+import { geocodeDeliveryAddress, getAmapSettings, hasUsableAmapSettings, loadAmap, resetAmapLoadCache } from "./services/amapService.js";
 import {
   deleteOrderMapImageFromApi,
   fetchOrderMapImageBlobFromApi,
@@ -65,6 +65,10 @@ var saveOrderBtn = document.getElementById("saveOrder");
 var saveOrderSideBtn = document.getElementById("saveOrderSide");
 
 var dashboardDateTitle = document.getElementById("dashboardDateTitle");
+var dashboardMonthInput = document.getElementById("dashboardMonthInput");
+var dashboardPrevMonth = document.getElementById("dashboardPrevMonth");
+var dashboardCurrentMonth = document.getElementById("dashboardCurrentMonth");
+var dashboardNextMonth = document.getElementById("dashboardNextMonth");
 var todayOrderCount = document.getElementById("todayOrderCount");
 var todayOrderAmount = document.getElementById("todayOrderAmount");
 var todayOrderArea = document.getElementById("todayOrderArea");
@@ -81,6 +85,8 @@ var orderLocationMap = document.getElementById("orderLocationMap");
 var orderMapSubtitle = document.getElementById("orderMapSubtitle");
 var orderMapStatus = document.getElementById("orderMapStatus");
 var orderMapEmpty = document.getElementById("orderMapEmpty");
+var orderMapEmptyText = document.getElementById("orderMapEmptyText");
+var orderMapRetry = document.getElementById("orderMapRetry");
 var orderMapOrderList = document.getElementById("orderMapOrderList");
 var recentOrderList = document.getElementById("recentOrderList");
 var recentOrderEmpty = document.getElementById("recentOrderEmpty");
@@ -107,6 +113,7 @@ var dataLastExported = document.getElementById("dataLastExported");
 var dataLastImported = document.getElementById("dataLastImported");
 var dataStatusMessage = document.getElementById("dataStatusMessage");
 var activeTrendRange = "7d";
+var activeDashboardMonth = getMonthKey(new Date());
 var orderMapState = {
   token: 0,
   AMap: null,
@@ -115,12 +122,15 @@ var orderMapState = {
   infoWindow: null,
   infoOrderId: "",
   infoToken: 0,
-  markers: []
+  markers: [],
+  lastPoints: [],
+  hasCompletedOnce: false
 };
 var orderMapImageUrlCache = {};
 var orderMapImageLoadPromises = {};
 var orderMapImageVersions = {};
 var recordMapImagePreviewTokens = {};
+var orderMapResizeTimer = null;
 
 function getConfig() {
   return currentConfig;
@@ -144,6 +154,44 @@ function formatDateTime(value, emptyText) {
 
 function formatArea(value) {
   return formatNum(Number(value), 4);
+}
+
+function getMonthKey(value) {
+  var date = value instanceof Date ? value : new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) date = new Date();
+  return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
+}
+
+function normalizeMonthKey(value) {
+  var text = String(value || "").trim();
+  var match = /^(\d{4})-(\d{1,2})$/.exec(text);
+  if (!match) return getMonthKey(new Date());
+  var month = Number(match[2]);
+  if (month < 1 || month > 12) return getMonthKey(new Date());
+  return match[1] + "-" + String(month).padStart(2, "0");
+}
+
+function addMonthsToKey(monthKey, offset) {
+  var normalized = normalizeMonthKey(monthKey);
+  var parts = normalized.split("-");
+  return getMonthKey(new Date(Number(parts[0]), Number(parts[1]) - 1 + Number(offset || 0), 1));
+}
+
+function getMonthlyDashboardStats(orders, monthKey) {
+  var targetMonth = normalizeMonthKey(monthKey);
+  var monthOrders = (Array.isArray(orders) ? orders : []).filter(function (order) {
+    return String(order && order.orderDate || "").slice(0, 7) === targetMonth;
+  });
+  return {
+    month: targetMonth,
+    count: monthOrders.length,
+    amount: monthOrders.reduce(function (total, order) {
+      return total + (Number(order && order.totals && order.totals.grandAmount) || 0);
+    }, 0),
+    area: monthOrders.reduce(function (total, order) {
+      return total + (Number(order && order.totals && order.totals.areaTotal) || 0);
+    }, 0)
+  };
 }
 
 function getTrendRangeLabel(range) {
@@ -172,9 +220,9 @@ function shouldShowTick(index, length, bucketType) {
 }
 
 function renderTrendChart(trend) {
-  var bounds = { left: 52, right: 48, top: 28, bottom: 56 };
+  var bounds = { left: 46, right: 34, top: 18, bottom: 38 };
   bounds.width = 920 - bounds.left - bounds.right;
-  bounds.height = 320 - bounds.top - bounds.bottom;
+  bounds.height = 220 - bounds.top - bounds.bottom;
   var countPoints = trend.points.map(function (point, index, points) {
     return getChartPoint(points, index, "count", bounds, trend.maxCount);
   });
@@ -188,7 +236,7 @@ function renderTrendChart(trend) {
   var labels = trend.points.map(function (point, index) {
     if (!shouldShowTick(index, trend.points.length, trend.bucketType)) return "";
     var chartPoint = getChartPoint(trend.points, index, "count", bounds, trend.maxCount);
-    return "<text class='chart-label' x='" + chartPoint.x.toFixed(2) + "' y='298' text-anchor='middle'>" + escapeHtml(point.label) + "</text>";
+    return "<text class='chart-label' x='" + chartPoint.x.toFixed(2) + "' y='208' text-anchor='middle'>" + escapeHtml(point.label) + "</text>";
   }).join("");
   var dots = trend.points.map(function (point, index) {
     var countPoint = countPoints[index];
@@ -457,9 +505,16 @@ function setOrderMapStatus(text, mode) {
 
 function setOrderMapEmpty(message, visible) {
   if (!orderMapEmpty) return;
-  orderMapEmpty.textContent = message || "";
+  var messageTarget = orderMapEmptyText || orderMapEmpty;
+  messageTarget.textContent = message || "";
   orderMapEmpty.hidden = !visible;
   orderMapEmpty.classList.toggle("is-visible", Boolean(visible));
+  if (orderMapRetry) orderMapRetry.hidden = true;
+}
+
+function setOrderMapEmptyWithRetry(message, visible, retryVisible) {
+  setOrderMapEmpty(message, visible);
+  if (orderMapRetry) orderMapRetry.hidden = !retryVisible;
 }
 
 function getOrderLocation(order) {
@@ -532,6 +587,108 @@ function clearOrderMapLayers() {
   }
 }
 
+function closeOrderMapInfoWindow() {
+  if (!orderMapState.infoWindow) return;
+  try {
+    if (typeof orderMapState.infoWindow.close === "function") orderMapState.infoWindow.close();
+  } catch (error) {
+    console.warn("订单地图弹窗关闭失败。", error);
+  }
+}
+
+function destroyOrderMapInstance() {
+  closeOrderMapInfoWindow();
+  clearOrderMapLayers();
+  if (orderMapState.map) {
+    try {
+      if (typeof orderMapState.map.destroy === "function") orderMapState.map.destroy();
+    } catch (error) {
+      console.warn("订单地图实例销毁失败。", error);
+    }
+  }
+  orderMapState.map = null;
+  orderMapState.cluster = null;
+  orderMapState.infoWindow = null;
+  orderMapState.infoOrderId = "";
+  orderMapState.markers = [];
+  orderMapState.hasCompletedOnce = false;
+}
+
+function resizeOrderMap() {
+  if (!orderMapState.map || typeof orderMapState.map.resize !== "function") return;
+  try {
+    orderMapState.map.resize();
+  } catch (error) {
+    console.warn("订单地图尺寸刷新失败。", error);
+  }
+}
+
+function fitOrderMapPoints(points) {
+  if (!orderMapState.map || !Array.isArray(points) || !points.length) return;
+  try {
+    if (points.length === 1) {
+      orderMapState.map.setZoomAndCenter(11, points[0].lnglat);
+    } else if (typeof orderMapState.map.setFitView === "function") {
+      orderMapState.map.setFitView();
+    }
+  } catch (error) {
+    console.warn("订单地图视野适配失败。", error);
+  }
+}
+
+function scheduleOrderMapLayout(token, points) {
+  [0, 80, 280].forEach(function (delay) {
+    setTimeout(function () {
+      if (token !== orderMapState.token) return;
+      resizeOrderMap();
+      fitOrderMapPoints(points);
+    }, delay);
+  });
+}
+
+function markOrderMapReady(token, points) {
+  if (token !== orderMapState.token) return;
+  orderMapState.hasCompletedOnce = true;
+  setOrderMapStatus("已显示", "ready");
+  setOrderMapEmptyWithRetry("", false, false);
+  scheduleOrderMapLayout(token, points);
+}
+
+function watchOrderMapTiles(token, points) {
+  var map = orderMapState.map;
+  if (!map) return;
+  if (orderMapState.hasCompletedOnce) {
+    setTimeout(function () {
+      markOrderMapReady(token, points);
+    }, 80);
+    return;
+  }
+
+  var completed = false;
+  function handleReady() {
+    if (completed) return;
+    completed = true;
+    markOrderMapReady(token, points);
+  }
+
+  try {
+    if (typeof map.on === "function") {
+      map.on("complete", handleReady);
+      map.on("tilesloaded", handleReady);
+    }
+  } catch (error) {
+    console.warn("订单地图加载事件监听失败。", error);
+  }
+
+  setTimeout(function () {
+    if (token !== orderMapState.token || completed) return;
+    resizeOrderMap();
+    fitOrderMapPoints(points);
+    setOrderMapStatus("底图较慢", "warning");
+    setOrderMapEmptyWithRetry("地图底图加载较慢，请检查高德 Key 或网络。", true, true);
+  }, 4200);
+}
+
 function ensureOrderMap(AMap, settings) {
   if (!orderLocationMap) return null;
   if (!orderMapState.map) {
@@ -592,7 +749,10 @@ function openOrderInfo(order, lnglat) {
   if (!orderMapState.AMap || !orderMapState.map) return;
   if (!orderMapState.infoWindow) {
     orderMapState.infoWindow = new orderMapState.AMap.InfoWindow({
-      offset: new orderMapState.AMap.Pixel(0, -28)
+      autoMove: true,
+      avoid: [24, 24, 24, 24],
+      closeWhenClickMap: true,
+      offset: new orderMapState.AMap.Pixel(0, -30)
     });
   }
   var orderId = getOrderMapImageOrderId(order && order.id);
@@ -605,6 +765,7 @@ function openOrderInfo(order, lnglat) {
     state: cachedImageUrl ? "ready" : (isApiConfigured() ? "loading" : "none")
   }));
   orderMapState.infoWindow.open(orderMapState.map, lnglat);
+  setTimeout(resizeOrderMap, 0);
   if (!orderId || cachedImageUrl || !isApiConfigured()) return;
   loadOrderMapImageUrl(orderId).then(function (url) {
     if (orderMapState.infoToken !== infoToken || orderMapState.infoOrderId !== orderId) return;
@@ -659,11 +820,8 @@ function renderOrderMapPoints(AMap, points) {
     createManualOrderMarkers(AMap, points);
   }
 
-  if (points.length === 1) {
-    orderMapState.map.setZoomAndCenter(11, points[0].lnglat);
-  } else {
-    orderMapState.map.setFitView();
-  }
+  resizeOrderMap();
+  fitOrderMapPoints(points);
 }
 
 function renderOrderMap(orders) {
@@ -683,6 +841,7 @@ function renderOrderMap(orders) {
       orderId: order.id
     };
   }).filter(Boolean);
+  orderMapState.lastPoints = points;
   var pendingCount = rangeOrders.length - points.length;
 
   if (orderMapSubtitle) {
@@ -692,43 +851,60 @@ function renderOrderMap(orders) {
   if (!settings.enabled) {
     clearOrderMapLayers();
     setOrderMapStatus("未启用", "idle");
-    setOrderMapEmpty("请在系统管理中启用首页订单地图。", true);
+    setOrderMapEmptyWithRetry("请在系统管理中启用首页订单地图。", true, false);
     return;
   }
   if (!settings.amapKey || !settings.securityJsCode) {
     clearOrderMapLayers();
     setOrderMapStatus("待配置", "warning");
-    setOrderMapEmpty("请在系统管理中填写高德 JS API Key 和 securityJsCode。", true);
+    setOrderMapEmptyWithRetry("请在系统管理中填写高德 JS API Key 和 securityJsCode。", true, false);
     return;
   }
   if (!rangeOrders.length) {
     clearOrderMapLayers();
     setOrderMapStatus("无订单", "idle");
-    setOrderMapEmpty("当前时间范围内暂无订单。", true);
+    setOrderMapEmptyWithRetry("当前时间范围内暂无订单。", true, false);
     return;
   }
   if (!points.length) {
     clearOrderMapLayers();
     setOrderMapStatus("待定位", "warning");
-    setOrderMapEmpty("当前范围内的订单还没有可用坐标。请在订单中填写收货地址后重新保存。", true);
+    setOrderMapEmptyWithRetry("当前范围内的订单还没有可用坐标。请在订单中填写收货地址后重新保存。", true, false);
     return;
   }
 
   setOrderMapStatus("加载中", "loading");
-  setOrderMapEmpty("地图加载中...", true);
+  setOrderMapEmptyWithRetry("地图加载中...", true, false);
   loadAmap(currentConfig, ["AMap.MarkerCluster"]).then(function (AMap) {
     if (token !== orderMapState.token) return;
     orderMapState.AMap = AMap;
     ensureOrderMap(AMap, settings);
+    setOrderMapStatus("渲染中", "loading");
     renderOrderMapPoints(AMap, points);
-    setOrderMapStatus("已显示", "ready");
-    setOrderMapEmpty("", false);
+    scheduleOrderMapLayout(token, points);
+    watchOrderMapTiles(token, points);
   }).catch(function (error) {
     if (token !== orderMapState.token) return;
     clearOrderMapLayers();
     setOrderMapStatus("加载失败", "error");
-    setOrderMapEmpty(error.message || "高德地图加载失败，请检查 Key、网络或安全配置。", true);
+    setOrderMapEmptyWithRetry(error.message || "地图加载失败，请检查高德 Key 或网络。", true, true);
   });
+}
+
+function retryOrderMapLoad() {
+  resetAmapLoadCache();
+  destroyOrderMapInstance();
+  setOrderMapStatus("重新加载", "loading");
+  setOrderMapEmptyWithRetry("地图重新加载中...", true, false);
+  renderOrderMap(loadOrders());
+}
+
+function queueOrderMapResize() {
+  if (orderMapResizeTimer) clearTimeout(orderMapResizeTimer);
+  orderMapResizeTimer = setTimeout(function () {
+    orderMapResizeTimer = null;
+    scheduleOrderMapLayout(orderMapState.token, orderMapState.lastPoints);
+  }, 120);
 }
 
 function hasDraftContent(draft) {
@@ -793,6 +969,8 @@ window.addEventListener("erp-api-unauthorized", function () {
   renderAuthGate();
 });
 
+window.addEventListener("resize", queueOrderMapResize);
+
 function refreshOrdersFromPreferredSource() {
   loadOrdersWithApiFallback().then(function () {
     renderAll();
@@ -823,6 +1001,10 @@ function showView(viewId) {
   appViewButtons.forEach(function (button) {
     button.classList.toggle("active", button.getAttribute("data-app-view") === viewId);
   });
+  if (viewId === "dashboardView") {
+    renderDashboard();
+    scheduleOrderMapLayout(orderMapState.token, orderMapState.lastPoints);
+  }
   if (viewId === "shippingView") shippingPage.recalc();
   if (viewId === "historyView") renderHistory();
   if (viewId === "dataView") renderDataStatus();
@@ -831,12 +1013,14 @@ function showView(viewId) {
 
 function renderDashboard() {
   var orders = loadOrders();
-  var today = getDateOnly(new Date());
-  var stats = getOrderStats(orders, today);
-  dashboardDateTitle.textContent = today + " 订单";
-  todayOrderCount.textContent = String(stats.todayCount);
-  todayOrderAmount.textContent = formatMoney(stats.todayAmount);
-  todayOrderArea.textContent = formatArea(stats.todayArea);
+  var monthStats = getMonthlyDashboardStats(orders, activeDashboardMonth);
+  activeDashboardMonth = monthStats.month;
+  if (dashboardMonthInput) dashboardMonthInput.value = activeDashboardMonth;
+  var stats = getOrderStats(orders, getDateOnly(new Date()));
+  dashboardDateTitle.textContent = activeDashboardMonth + " 订单";
+  todayOrderCount.textContent = String(monthStats.count);
+  todayOrderAmount.textContent = formatMoney(monthStats.amount);
+  todayOrderArea.textContent = formatArea(monthStats.area);
   totalOrderCount.textContent = String(stats.totalCount);
   totalOrderAmount.textContent = formatMoney(stats.totalAmount);
   totalOrderArea.textContent = formatArea(stats.totalArea);
@@ -1250,6 +1434,11 @@ function renderAll() {
   renderDataStatus();
 }
 
+function setDashboardMonth(monthKey) {
+  activeDashboardMonth = normalizeMonthKey(monthKey);
+  renderDashboard();
+}
+
 function saveCurrentOrder() {
   var draft = shippingPage.createOrderDraft();
   if (!hasDraftContent(draft)) {
@@ -1380,12 +1569,40 @@ backToShipping.addEventListener("click", function () { showView("shippingView");
 saveOrderBtn.addEventListener("click", saveCurrentOrder);
 saveOrderSideBtn.addEventListener("click", saveCurrentOrder);
 
+if (dashboardMonthInput) {
+  dashboardMonthInput.addEventListener("change", function () {
+    setDashboardMonth(dashboardMonthInput.value);
+  });
+}
+
+if (dashboardPrevMonth) {
+  dashboardPrevMonth.addEventListener("click", function () {
+    setDashboardMonth(addMonthsToKey(activeDashboardMonth, -1));
+  });
+}
+
+if (dashboardCurrentMonth) {
+  dashboardCurrentMonth.addEventListener("click", function () {
+    setDashboardMonth(getMonthKey(new Date()));
+  });
+}
+
+if (dashboardNextMonth) {
+  dashboardNextMonth.addEventListener("click", function () {
+    setDashboardMonth(addMonthsToKey(activeDashboardMonth, 1));
+  });
+}
+
 trendRangeButtons.forEach(function (button) {
   button.addEventListener("click", function () {
     activeTrendRange = button.getAttribute("data-trend-range") || "7d";
     renderDashboard();
   });
 });
+
+if (orderMapRetry) {
+  orderMapRetry.addEventListener("click", retryOrderMapLoad);
+}
 
 [historyDateFilter, historyOrderSearch, historyCustomerSearch].forEach(function (input) {
   input.addEventListener("input", renderHistory);

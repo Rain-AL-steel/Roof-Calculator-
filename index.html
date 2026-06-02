@@ -176,20 +176,29 @@
       <div class="dashboard-grid">
         <section class="dashboard-panel dashboard-hero">
           <div>
-            <p class="eyebrow">今日概览</p>
-            <h2 id="dashboardDateTitle">今日订单</h2>
+            <p class="eyebrow">单月概览</p>
+            <h2 id="dashboardDateTitle">本月订单</h2>
+            <div class="month-controls" aria-label="切换统计月份">
+              <button type="button" class="month-nav-btn" id="dashboardPrevMonth">上一月</button>
+              <label class="month-input-wrap">
+                <span class="sr-only">统计月份</span>
+                <input id="dashboardMonthInput" type="month" />
+              </label>
+              <button type="button" class="month-nav-btn" id="dashboardCurrentMonth">当前月</button>
+              <button type="button" class="month-nav-btn" id="dashboardNextMonth">下一月</button>
+            </div>
           </div>
           <div class="metric-grid">
             <div class="metric-card">
-              <span>今日订单数</span>
+              <span>本月订单数</span>
               <strong id="todayOrderCount">0</strong>
             </div>
             <div class="metric-card">
-              <span>今日订单金额</span>
+              <span>本月订单金额</span>
               <strong id="todayOrderAmount">0.00</strong>
             </div>
             <div class="metric-card">
-              <span>今日总面积</span>
+              <span>本月总面积</span>
               <strong id="todayOrderArea">0.0000</strong>
             </div>
           </div>
@@ -222,8 +231,8 @@
             <button type="button" class="range-btn" data-trend-range="1y">一年</button>
           </div>
         </div>
-        <div class="trend-insight-grid">
-          <div class="trend-chart-column">
+        <div class="trend-body">
+          <div class="trend-meta-row">
             <div class="trend-stats">
               <div><span>范围内订单数</span><strong id="trendTotalCount">0</strong></div>
               <div><span>范围内订单金额</span><strong id="trendTotalAmount">0.00</strong></div>
@@ -232,26 +241,30 @@
               <span><i class="legend-dot count"></i>订单数量</span>
               <span><i class="legend-dot amount"></i>订单金额</span>
             </div>
-            <div class="trend-chart-wrap">
-              <svg id="orderTrendChart" class="trend-chart" viewBox="0 0 920 320" role="img" aria-label="订单趋势折线图"></svg>
-              <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
-            </div>
           </div>
-          <section class="order-map-card" aria-label="订单位置地图">
-            <div class="map-panel-head">
-              <div>
-                <h3>订单地图</h3>
-                <p class="subtext" id="orderMapSubtitle">地图跟随趋势时间范围显示出货订单。</p>
-              </div>
-              <span class="map-status-pill" id="orderMapStatus">待配置</span>
-            </div>
-            <div class="order-map-wrap">
-              <div id="orderLocationMap" class="order-map" role="img" aria-label="出货订单位置地图"></div>
-              <div class="map-empty-state" id="orderMapEmpty">请在系统管理中启用地图并填写高德 Key。</div>
-            </div>
-            <div class="map-order-list" id="orderMapOrderList" aria-label="地图订单信息"></div>
-          </section>
+          <div class="trend-chart-wrap">
+            <svg id="orderTrendChart" class="trend-chart" viewBox="0 0 920 220" role="img" aria-label="订单趋势折线图"></svg>
+            <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
+          </div>
         </div>
+      </section>
+
+      <section class="dashboard-panel order-map-card" aria-label="订单位置地图">
+        <div class="map-panel-head">
+          <div>
+            <h2>订单地图</h2>
+            <p class="subtext" id="orderMapSubtitle">地图跟随趋势时间范围显示出货订单。</p>
+          </div>
+          <span class="map-status-pill" id="orderMapStatus">待配置</span>
+        </div>
+        <div class="order-map-wrap">
+          <div id="orderLocationMap" class="order-map" role="img" aria-label="出货订单位置地图"></div>
+          <div class="map-empty-state" id="orderMapEmpty">
+            <p id="orderMapEmptyText">请在系统管理中启用地图并填写高德 Key。</p>
+            <button type="button" class="map-retry-btn" id="orderMapRetry" hidden>重新加载地图</button>
+          </div>
+        </div>
+        <div class="map-order-list" id="orderMapOrderList" aria-label="地图订单信息"></div>
       </section>
 
       <section class="dashboard-panel recent-orders-panel">

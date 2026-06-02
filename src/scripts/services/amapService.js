@@ -92,6 +92,11 @@ export function loadAmap(config, plugins) {
   });
 }
 
+export function resetAmapLoadCache() {
+  amapLoadCache = {};
+  if (!globalThis.AMapLoader) loaderScriptPromise = null;
+}
+
 export function geocodeDeliveryAddress(address, config) {
   var text = compactText(address);
   if (!text || !hasUsableAmapSettings(config)) return Promise.resolve(null);

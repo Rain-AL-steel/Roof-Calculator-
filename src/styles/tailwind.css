@@ -695,16 +695,32 @@
   }
 
   .dashboard-panel {
-    @apply rounded-app-lg border border-app-line bg-white p-3.5 shadow-app md:rounded-app-xl md:p-[18px];
+    @apply min-w-0 rounded-app-lg border border-app-line bg-white p-3.5 shadow-app md:rounded-app-xl md:p-[18px];
     box-shadow: var(--shadow);
   }
 
   .dashboard-hero {
-    @apply grid gap-4 md:grid-cols-[minmax(220px,0.75fr)_minmax(0,1.25fr)] md:items-end;
+    @apply grid gap-4 md:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)] md:items-end;
   }
 
   .dashboard-hero h2 {
     @apply m-0 text-[clamp(1.35rem,2vw,1.95rem)] font-black tracking-[-0.02em];
+  }
+
+  .month-controls {
+    @apply mt-3 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center;
+  }
+
+  .month-input-wrap {
+    @apply min-w-0 md:min-w-[142px];
+  }
+
+  .month-input-wrap input {
+    @apply min-h-9 w-full rounded-[10px] border border-app-line bg-white px-2.5 py-1 text-[0.82rem] font-black text-app-text outline-none transition duration-200 ease-app-out focus:border-app-primary focus:ring-4 focus:ring-app-primary/10;
+  }
+
+  .month-nav-btn {
+    @apply min-h-9 rounded-[10px] border border-app-line bg-app-surface-soft px-2.5 py-1 text-[0.78rem] font-black text-app-muted transition duration-200 ease-app-out hover:border-app-primary hover:bg-white hover:text-app-primary;
   }
 
   .section-head.compact {
@@ -797,15 +813,20 @@
   }
 
   .trend-panel {
-    @apply grid gap-3;
+    @apply grid gap-2.5;
   }
 
   .trend-insight-grid {
     @apply grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-stretch;
   }
 
+  .trend-body,
   .trend-chart-column {
-    @apply grid min-w-0 gap-3;
+    @apply grid min-w-0 gap-2.5;
+  }
+
+  .trend-meta-row {
+    @apply grid min-w-0 grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center;
   }
 
   .range-switch {
@@ -829,7 +850,7 @@
   }
 
   .trend-stats div {
-    @apply grid gap-1 rounded-app border border-app-line bg-app-surface-soft p-3;
+    @apply grid gap-1 rounded-app border border-app-line bg-app-surface-soft px-3 py-2.5;
   }
 
   .trend-stats span {
@@ -837,11 +858,11 @@
   }
 
   .trend-stats strong {
-    @apply font-mono text-[1.12rem] font-black text-app-text;
+    @apply font-mono text-[1rem] font-black text-app-text;
   }
 
   .trend-legend {
-    @apply flex flex-wrap items-center gap-3 text-[0.82rem] font-black text-app-muted;
+    @apply flex flex-wrap items-center gap-3 text-[0.78rem] font-black text-app-muted;
   }
 
   .trend-legend span {
@@ -861,11 +882,11 @@
   }
 
   .trend-chart-wrap {
-    @apply relative min-h-[260px] overflow-x-auto rounded-app-lg border border-app-line bg-white p-2;
+    @apply relative min-h-[190px] overflow-hidden rounded-app-lg border border-app-line bg-white p-1.5;
   }
 
   .trend-chart {
-    @apply block h-[260px] min-w-[720px] w-full;
+    @apply block h-[180px] min-w-0 w-full;
   }
 
   .trend-chart.is-muted {
@@ -882,7 +903,7 @@
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
-    stroke-width: 4;
+    stroke-width: 3;
   }
 
   .chart-line.count {
@@ -916,13 +937,14 @@
   }
 
   .order-map-card {
-    @apply grid min-w-0 gap-3 rounded-app-lg border border-app-line bg-app-surface-soft p-3;
+    @apply relative z-[2] grid min-w-0 gap-3 overflow-visible rounded-app-lg border border-app-line bg-app-surface-soft p-3;
   }
 
   .map-panel-head {
     @apply flex flex-wrap items-start justify-between gap-3;
   }
 
+  .map-panel-head h2,
   .map-panel-head h3 {
     @apply m-0 text-[1.02rem] font-black leading-[1.1] tracking-[-0.01em];
   }
@@ -949,20 +971,28 @@
   }
 
   .order-map-wrap {
-    @apply relative min-h-[320px] overflow-hidden rounded-app-lg border border-app-line bg-white;
+    @apply relative z-[1] min-h-[340px] overflow-visible rounded-app-lg border border-app-line bg-white;
   }
 
   .order-map {
-    @apply h-[320px] w-full;
+    @apply relative z-0 h-[340px] w-full rounded-app-lg;
   }
 
   .map-empty-state {
-    @apply pointer-events-none absolute inset-x-4 top-1/2 hidden -translate-y-1/2 rounded-app border border-app-line bg-white/95 px-4 py-3 text-center text-[0.86rem] font-extrabold leading-[1.45] text-app-muted;
+    @apply pointer-events-auto absolute inset-x-4 top-1/2 z-[20] hidden -translate-y-1/2 rounded-app border border-app-line bg-white/95 px-4 py-3 text-center text-[0.86rem] font-extrabold leading-[1.45] text-app-muted;
     box-shadow: 0 16px 38px rgba(89, 56, 19, 0.08);
+  }
+
+  .map-empty-state p {
+    @apply m-0;
   }
 
   .map-empty-state.is-visible {
     @apply block;
+  }
+
+  .map-retry-btn {
+    @apply mt-3 min-h-9 rounded-[10px] border border-app-primary/30 bg-white px-3 py-1.5 text-[0.8rem] font-black text-app-primary transition duration-200 ease-app-out hover:bg-app-primary-soft;
   }
 
   .map-order-list {
@@ -974,11 +1004,11 @@
   }
 
   .map-order-item {
-    @apply grid grid-cols-[86px_minmax(0,1fr)_auto] items-start gap-2 rounded-app border border-app-line bg-white p-2.5;
+    @apply grid min-w-0 grid-cols-1 items-start gap-2 rounded-app border border-app-line bg-white p-2.5 md:grid-cols-[86px_minmax(0,1fr)_auto];
   }
 
   .map-order-item time {
-    @apply rounded-[9px] border border-app-line bg-app-surface-soft px-2 py-1 text-center font-mono text-[0.72rem] font-black text-app-text;
+    @apply w-fit rounded-[9px] border border-app-line bg-app-surface-soft px-2 py-1 text-center font-mono text-[0.72rem] font-black text-app-text md:w-auto;
   }
 
   .map-order-item strong {
@@ -1025,7 +1055,15 @@
   }
 
   .order-map-info {
-    @apply min-w-[220px] max-w-[280px] p-1 text-app-text;
+    @apply min-w-[220px] max-w-[300px] p-1 text-app-text;
+  }
+
+  .order-map-wrap .amap-info {
+    z-index: 30 !important;
+  }
+
+  .order-map-wrap .amap-info-contentContainer {
+    @apply overflow-visible;
   }
 
   .order-map-info strong {
