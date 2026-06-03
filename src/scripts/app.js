@@ -9,7 +9,7 @@ import {
   logout,
   setupPassword
 } from "./services/authService.js";
-import { loadConfig, saveConfig, subscribeConfigChange } from "./services/configService.js";
+import { loadConfig, subscribeConfigChange } from "./services/configService.js";
 import { geocodeDeliveryAddress, getAmapSettings, hasUsableAmapSettings, loadAmap, resetAmapLoadCache } from "./services/amapService.js";
 import {
   deleteOrderMapImageFromApi,
@@ -19,7 +19,6 @@ import {
   uploadOrderMapImageToApi
 } from "./services/apiClient.js";
 import {
-  buildExportPayload,
   clearOrdersWithApiFallback,
   deleteOrderWithApiFallback,
   generateOrderNo,
@@ -27,13 +26,9 @@ import {
   getOrderStats,
   getOrderTrend,
   getOrdersInTrendRange,
-  importOrdersFromPayload,
-  loadBackupMeta,
   loadOrders,
   loadOrdersWithApiFallback,
   normalizeOrder,
-  readImportPayload,
-  saveBackupMeta,
   updateOrderWithApiFallback,
   upsertOrderWithApiFallback
 } from "./services/orderService.js";
@@ -77,9 +72,10 @@ var totalOrderAmount = document.getElementById("totalOrderAmount");
 var totalOrderArea = document.getElementById("totalOrderArea");
 var trendSubtitle = document.getElementById("trendSubtitle");
 var trendRangeButtons = Array.prototype.slice.call(document.querySelectorAll("[data-trend-range]"));
-var trendTotalCount = document.getElementById("trendTotalCount");
-var trendTotalAmount = document.getElementById("trendTotalAmount");
+var trendOrderList = document.getElementById("trendOrderList");
+var trendOrderEmpty = document.getElementById("trendOrderEmpty");
 var orderTrendChart = document.getElementById("orderTrendChart");
+var trendPointDetail = document.getElementById("trendPointDetail");
 var trendEmpty = document.getElementById("trendEmpty");
 var orderLocationMap = document.getElementById("orderLocationMap");
 var orderMapSubtitle = document.getElementById("orderMapSubtitle");
@@ -87,9 +83,10 @@ var orderMapStatus = document.getElementById("orderMapStatus");
 var orderMapEmpty = document.getElementById("orderMapEmpty");
 var orderMapEmptyText = document.getElementById("orderMapEmptyText");
 var orderMapRetry = document.getElementById("orderMapRetry");
-var orderMapOrderList = document.getElementById("orderMapOrderList");
-var recentOrderList = document.getElementById("recentOrderList");
-var recentOrderEmpty = document.getElementById("recentOrderEmpty");
+var mapImageLightbox = document.getElementById("mapImageLightbox");
+var mapImageLightboxImg = document.getElementById("mapImageLightboxImg");
+var mapImageLightboxCaption = document.getElementById("mapImageLightboxCaption");
+var mapImageLightboxClose = document.getElementById("mapImageLightboxClose");
 
 var historyDateFilter = document.getElementById("historyDateFilter");
 var historyOrderSearch = document.getElementById("historyOrderSearch");
@@ -105,15 +102,10 @@ var recordDetailSubtitle = document.getElementById("recordDetailSubtitle");
 var recordDetailBody = document.getElementById("recordDetailBody");
 var closeRecordDetail = document.getElementById("closeRecordDetail");
 
-var exportDataBtn = document.getElementById("exportData");
-var importDataFile = document.getElementById("importDataFile");
-var dataOrderCount = document.getElementById("dataOrderCount");
-var dataLastSaved = document.getElementById("dataLastSaved");
-var dataLastExported = document.getElementById("dataLastExported");
-var dataLastImported = document.getElementById("dataLastImported");
-var dataStatusMessage = document.getElementById("dataStatusMessage");
 var activeTrendRange = "7d";
 var activeDashboardMonth = getMonthKey(new Date());
+var activeTrendPointKey = "";
+var trendPointDetailsByKey = {};
 var orderMapState = {
   token: 0,
   AMap: null,
@@ -138,19 +130,6 @@ function getConfig() {
 
 var shippingPage = initShippingPage({ getConfig: getConfig });
 var adminPage = initAdminPage({ getConfig: getConfig });
-
-function formatDateTime(value, emptyText) {
-  if (!value) return emptyText || "暂无";
-  var date = new Date(value);
-  if (Number.isNaN(date.getTime())) return emptyText || "暂无";
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
 
 function formatArea(value) {
   return formatNum(Number(value), 4);
@@ -219,7 +198,83 @@ function shouldShowTick(index, length, bucketType) {
   return index % 5 === 0 || index === length - 1;
 }
 
-function renderTrendChart(trend) {
+function getTrendBucketKey(order, bucketType) {
+  var orderDate = String(order && order.orderDate || "").trim();
+  return bucketType === "month" ? orderDate.slice(0, 7) : orderDate;
+}
+
+function getTrendOrdersByKey(orders, trend) {
+  var grouped = {};
+  trend.points.forEach(function (point) {
+    grouped[point.key] = [];
+  });
+  sortOrdersByOrderDate(orders).forEach(function (order) {
+    var key = getTrendBucketKey(order, trend.bucketType);
+    if (!grouped[key]) return;
+    grouped[key].push(order);
+  });
+  return grouped;
+}
+
+function renderTrendOrderList(orders) {
+  if (!trendOrderList) return;
+  var sorted = sortOrdersByOrderDate(orders);
+  setEmptyNote(trendOrderEmpty, !sorted.length);
+  trendOrderList.innerHTML = sorted.map(function (order) {
+    return "<article class='trend-order-item'>" +
+      "<strong>" + escapeHtml(getOrderCustomer(order)) + "</strong>" +
+      "<span>面积：" + escapeHtml(getOrderAreaDisplay(order)) + "</span>" +
+      "<span>颜色：" + escapeHtml(getOrderColorDisplay(order)) + "</span>" +
+      "</article>";
+  }).join("");
+}
+
+function getTrendPointAria(point, orders) {
+  return point.key + "，订单数量 " + point.count + "，订单金额 " + formatMoney(point.amount) + "，相关订单 " + orders.length + " 条";
+}
+
+function setActiveTrendChartPoint(key) {
+  if (!orderTrendChart) return;
+  Array.prototype.slice.call(orderTrendChart.querySelectorAll("[data-trend-key]")).forEach(function (item) {
+    item.classList.toggle("is-active", item.getAttribute("data-trend-key") === key);
+  });
+}
+
+function hideTrendPointDetail() {
+  activeTrendPointKey = "";
+  setActiveTrendChartPoint("");
+  if (trendPointDetail) {
+    trendPointDetail.hidden = true;
+    trendPointDetail.innerHTML = "";
+  }
+}
+
+function renderTrendPointDetail(key) {
+  if (!trendPointDetail) return;
+  var detail = key ? trendPointDetailsByKey[key] : null;
+  if (!detail) {
+    hideTrendPointDetail();
+    return;
+  }
+  var orders = detail.orders || [];
+  var listHtml = orders.length ? orders.map(function (order) {
+    return "<article class='trend-detail-order'>" +
+      "<time>" + escapeHtml(order.orderDate || "未填写日期") + "</time>" +
+      "<strong>" + escapeHtml(getOrderCustomer(order)) + "</strong>" +
+      "<span>¥" + escapeHtml(formatMoney(Number(order && order.totals && order.totals.grandAmount) || 0)) + "</span>" +
+      "</article>";
+  }).join("") : "<p class='trend-detail-empty'>该日期暂无订单。</p>";
+  trendPointDetail.innerHTML =
+    "<div class='trend-detail-head'>" +
+    "<span>" + escapeHtml(detail.point.key) + "</span>" +
+    "<button type='button' class='icon-btn trend-detail-close' data-trend-detail-close aria-label='关闭趋势详情'><svg class='ui-icon' aria-hidden='true'><use href='#icon-clear'></use></svg></button>" +
+    "</div>" +
+    "<div class='trend-detail-list'>" + listHtml + "</div>";
+  trendPointDetail.hidden = false;
+  setActiveTrendChartPoint(key);
+}
+
+function renderTrendChart(trend, ordersByKey) {
   var bounds = { left: 46, right: 34, top: 18, bottom: 38 };
   bounds.width = 920 - bounds.left - bounds.right;
   bounds.height = 220 - bounds.top - bounds.bottom;
@@ -241,8 +296,15 @@ function renderTrendChart(trend) {
   var dots = trend.points.map(function (point, index) {
     var countPoint = countPoints[index];
     var amountPoint = amountPoints[index];
-    return "<circle class='chart-dot count' cx='" + countPoint.x.toFixed(2) + "' cy='" + countPoint.y.toFixed(2) + "' r='4'><title>" + escapeHtml(point.label) + " 订单数量：" + point.count + "</title></circle>" +
-      "<circle class='chart-dot amount' cx='" + amountPoint.x.toFixed(2) + "' cy='" + amountPoint.y.toFixed(2) + "' r='4'><title>" + escapeHtml(point.label) + " 订单金额：" + formatMoney(point.amount) + "</title></circle>";
+    var pointOrders = ordersByKey[point.key] || [];
+    var activeClass = point.key === activeTrendPointKey ? " is-active" : "";
+    var escapedKey = escapeHtml(point.key);
+    return "<g class='chart-point-group" + activeClass + "' tabindex='0' role='button' data-trend-key='" + escapedKey + "' aria-label='" + escapeHtml(getTrendPointAria(point, pointOrders)) + "'>" +
+      "<circle class='chart-hit-area' cx='" + countPoint.x.toFixed(2) + "' cy='" + countPoint.y.toFixed(2) + "' r='12'></circle>" +
+      "<circle class='chart-hit-area' cx='" + amountPoint.x.toFixed(2) + "' cy='" + amountPoint.y.toFixed(2) + "' r='12'></circle>" +
+      "<circle class='chart-dot count' cx='" + countPoint.x.toFixed(2) + "' cy='" + countPoint.y.toFixed(2) + "' r='4'><title>" + escapeHtml(point.label) + " 订单数量：" + point.count + "</title></circle>" +
+      "<circle class='chart-dot amount' cx='" + amountPoint.x.toFixed(2) + "' cy='" + amountPoint.y.toFixed(2) + "' r='4'><title>" + escapeHtml(point.label) + " 订单金额：" + formatMoney(point.amount) + "</title></circle>" +
+      "</g>";
   }).join("");
   orderTrendChart.innerHTML =
     grid +
@@ -255,14 +317,24 @@ function renderTrendChart(trend) {
 
 function renderTrend(orders) {
   var trend = getOrderTrend(orders, activeTrendRange, new Date());
+  var trendOrders = getOrdersInTrendRange(orders, activeTrendRange, new Date());
+  var ordersByKey = getTrendOrdersByKey(trendOrders, trend);
   var hasData = trend.totalCount > 0 || trend.totalAmount > 0;
   trendSubtitle.textContent = "查看" + getTrendRangeLabel(activeTrendRange) + "的订单数量和订单金额。";
-  trendTotalCount.textContent = String(trend.totalCount);
-  trendTotalAmount.textContent = formatMoney(trend.totalAmount);
   trendRangeButtons.forEach(function (button) {
     button.classList.toggle("active", button.getAttribute("data-trend-range") === activeTrendRange);
   });
-  renderTrendChart(trend);
+  trendPointDetailsByKey = {};
+  trend.points.forEach(function (point) {
+    trendPointDetailsByKey[point.key] = {
+      point: point,
+      orders: ordersByKey[point.key] || []
+    };
+  });
+  if (activeTrendPointKey && !trendPointDetailsByKey[activeTrendPointKey]) activeTrendPointKey = "";
+  renderTrendOrderList(trendOrders);
+  renderTrendChart(trend, ordersByKey);
+  renderTrendPointDetail(activeTrendPointKey);
   setEmptyNote(trendEmpty, !hasData);
   orderTrendChart.classList.toggle("is-muted", !hasData);
 }
@@ -549,24 +621,6 @@ function sortOrdersByOrderDate(orders) {
   });
 }
 
-function renderOrderMapList(orders) {
-  if (!orderMapOrderList) return;
-  var sorted = sortOrdersByOrderDate(orders);
-  if (!sorted.length) {
-    orderMapOrderList.innerHTML = "<div class='map-order-empty'>当前范围内暂无订单信息。</div>";
-    return;
-  }
-  orderMapOrderList.innerHTML = sorted.map(function (order) {
-    var located = Boolean(getOrderLocation(order));
-    return "<article class='map-order-item'>" +
-      "<time>" + escapeHtml(order.orderDate || "未填写日期") + "</time>" +
-      "<div><strong>" + escapeHtml(getOrderTitle(order)) + "</strong><span>" + escapeHtml(getOrderCustomer(order)) + " · " + escapeHtml(formatCompletionMonth(order.completionMonth)) + "</span></div>" +
-      "<p>" + escapeHtml(getOrderAddress(order) || "未填写收货地址") + "</p>" +
-      "<em class='" + (located ? "is-ready" : "is-pending") + "'>" + (located ? "已定位" : "待定位") + "</em>" +
-      "</article>";
-  }).join("");
-}
-
 function clearOrderMapLayers() {
   if (orderMapState.cluster) {
     try {
@@ -711,9 +765,11 @@ function getOrderMapLocationStatus(order) {
   return getOrderLocation(order) ? "已定位" : "待定位";
 }
 
-function getOrderMapInfoImageHtml(imageUrl, imageState) {
+function getOrderMapInfoImageHtml(imageUrl, imageState, title) {
   if (imageUrl) {
-    return "<div class='order-map-info-image'><img src='" + escapeHtml(imageUrl) + "' alt='地图展示图片' /></div>";
+    return "<button type='button' class='order-map-info-image is-clickable' data-map-lightbox-src='" + escapeHtml(imageUrl) + "' data-map-lightbox-caption='" + escapeHtml(title || "地图展示图片") + "'>" +
+      "<img src='" + escapeHtml(imageUrl) + "' alt='地图展示图片' />" +
+      "</button>";
   }
   var text = imageState === "loading" ? "图片读取中..." : "暂无地图展示图片";
   return "<div class='order-map-info-image is-empty'><span>" + escapeHtml(text) + "</span></div>";
@@ -730,8 +786,27 @@ function getOrderInfoHtml(order, imageOptions) {
     "<div><dt>状态</dt><dd>" + escapeHtml(getOrderMapLocationStatus(order)) + "</dd></div>" +
     "</dl>" +
     "<p class='address'>" + escapeHtml(getOrderAddress(order) || "未填写收货地址") + "</p>" +
-    getOrderMapInfoImageHtml(image.url, image.state) +
+    getOrderMapInfoImageHtml(image.url, image.state, getOrderCustomer(order)) +
     "</div>";
+}
+
+function openMapImageLightbox(src, caption) {
+  if (!mapImageLightbox || !mapImageLightboxImg) return;
+  mapImageLightboxImg.src = src;
+  mapImageLightboxImg.alt = caption || "地图展示图片预览";
+  if (mapImageLightboxCaption) mapImageLightboxCaption.textContent = caption || "地图展示图片";
+  mapImageLightbox.hidden = false;
+  document.body.classList.add("image-lightbox-open");
+}
+
+function closeMapImageLightbox() {
+  if (!mapImageLightbox) return;
+  mapImageLightbox.hidden = true;
+  document.body.classList.remove("image-lightbox-open");
+  if (mapImageLightboxImg) {
+    mapImageLightboxImg.removeAttribute("src");
+  }
+  if (mapImageLightboxCaption) mapImageLightboxCaption.textContent = "";
 }
 
 function refreshOpenOrderInfoForOrder(orderId, imageState) {
@@ -829,9 +904,8 @@ function renderOrderMap(orders) {
   var token = orderMapState.token + 1;
   orderMapState.token = token;
   var settings = getAmapSettings(currentConfig);
-  var rangeOrders = sortOrdersByOrderDate(getOrdersInTrendRange(orders, activeTrendRange, new Date()));
-  renderOrderMapList(rangeOrders);
-  var points = rangeOrders.map(function (order) {
+  var mapOrders = sortOrdersByOrderDate(orders);
+  var points = mapOrders.map(function (order) {
     var location = getOrderLocation(order);
     if (!location) return null;
     return {
@@ -842,10 +916,10 @@ function renderOrderMap(orders) {
     };
   }).filter(Boolean);
   orderMapState.lastPoints = points;
-  var pendingCount = rangeOrders.length - points.length;
+  var pendingCount = mapOrders.length - points.length;
 
   if (orderMapSubtitle) {
-    orderMapSubtitle.textContent = "查看" + getTrendRangeLabel(activeTrendRange) + "内的订单位置：" + points.length + " 个定位点，" + pendingCount + " 个待定位。";
+    orderMapSubtitle.textContent = "查看全部已定位订单：" + points.length + " 个已定位，" + pendingCount + " 个待定位。";
   }
 
   if (!settings.enabled) {
@@ -860,16 +934,16 @@ function renderOrderMap(orders) {
     setOrderMapEmptyWithRetry("请在系统管理中填写高德 JS API Key 和 securityJsCode。", true, false);
     return;
   }
-  if (!rangeOrders.length) {
+  if (!mapOrders.length) {
     clearOrderMapLayers();
     setOrderMapStatus("无订单", "idle");
-    setOrderMapEmptyWithRetry("当前时间范围内暂无订单。", true, false);
+    setOrderMapEmptyWithRetry("暂无订单可显示。", true, false);
     return;
   }
   if (!points.length) {
     clearOrderMapLayers();
     setOrderMapStatus("待定位", "warning");
-    setOrderMapEmptyWithRetry("当前范围内的订单还没有可用坐标。请在订单中填写收货地址后重新保存。", true, false);
+    setOrderMapEmptyWithRetry("全部订单暂未生成可用坐标。请在订单中填写收货地址后重新保存。", true, false);
     return;
   }
 
@@ -1007,7 +1081,6 @@ function showView(viewId) {
   }
   if (viewId === "shippingView") shippingPage.recalc();
   if (viewId === "historyView") renderHistory();
-  if (viewId === "dataView") renderDataStatus();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1026,21 +1099,6 @@ function renderDashboard() {
   totalOrderArea.textContent = formatArea(stats.totalArea);
   renderTrend(orders);
   renderOrderMap(orders);
-  setEmptyNote(recentOrderEmpty, stats.recentOrders.length === 0);
-  recentOrderList.innerHTML = stats.recentOrders.map(function (order) {
-    var orderMeta = [
-      order.orderDate || "未填写日期",
-      formatCompletionMonth(order.completionMonth)
-    ];
-    if (order.orderNo) orderMeta.push("编号：" + order.orderNo);
-    return "<article class='order-card'>" +
-      "<div class='order-card-main'><strong class='order-card-title'>" + escapeHtml(getOrderCustomer(order)) + "</strong><span class='order-card-meta'>" + escapeHtml(orderMeta.join(" · ")) + "</span></div>" +
-      "<div class='order-card-facts'>" +
-      "<div class='order-card-fact'><span class='order-card-label'>面积</span><strong class='order-card-value'>" + escapeHtml(getOrderAreaDisplay(order)) + "</strong></div>" +
-      "<div class='order-card-fact'><span class='order-card-label'>颜色</span><strong class='order-card-value'>" + escapeHtml(getOrderColorDisplay(order)) + "</strong></div>" +
-      "</div>" +
-      "</article>";
-  }).join("");
 }
 
 function getFilteredOrders() {
@@ -1085,7 +1143,7 @@ function renderItemSection(title, headers, rows, renderRow) {
 function renderOrderMapImageSection(order) {
   var orderId = getOrderMapImageOrderId(order && order.id);
   var escapedOrderId = escapeHtml(orderId);
-  var disabledContent = "<p class='map-image-note'>当前未连接后端 API，地图展示图片不会保存到 localStorage。</p>";
+  var disabledContent = "<p class='map-image-note'>当前未连接后端 API，地图展示图片暂不可保存。</p>";
   var actions = isApiConfigured() ? (
     "<div class='record-actions map-image-actions'>" +
     "<label class='btn btn-soft compact-btn map-image-upload-trigger'><svg class='ui-icon' aria-hidden='true'><use href='#icon-upload'></use></svg><span>上传图片</span><input class='visually-hidden-file' data-map-image-input data-order-id='" + escapedOrderId + "' type='file' accept='image/jpeg,image/png,image/webp' /></label>" +
@@ -1175,7 +1233,7 @@ function uploadRecordMapImage(orderId, file) {
   var id = getOrderMapImageOrderId(orderId);
   if (!id || !file) return;
   if (!isApiConfigured()) {
-    window.alert("当前未连接后端 API，地图展示图片不会保存到 localStorage。");
+    window.alert("当前未连接后端 API，地图展示图片暂不可保存。");
     return;
   }
   bumpOrderMapImageVersion(id);
@@ -1413,25 +1471,9 @@ function saveRecordEdit(form) {
   });
 }
 
-function renderDataStatus() {
-  var orders = loadOrders();
-  var meta = loadBackupMeta();
-  dataOrderCount.textContent = String(orders.length);
-  dataLastSaved.textContent = formatDateTime(meta.lastSavedAt, "未保存");
-  dataLastExported.textContent = formatDateTime(meta.lastExportedAt, "未导出");
-  dataLastImported.textContent = formatDateTime(meta.lastImportedAt, "未导入");
-}
-
-function setDataStatus(message, isError) {
-  dataStatusMessage.textContent = message || "";
-  dataStatusMessage.classList.toggle("is-error", Boolean(isError));
-  dataStatusMessage.classList.toggle("is-success", Boolean(message && !isError));
-}
-
 function renderAll() {
   renderDashboard();
   renderHistory();
-  renderDataStatus();
 }
 
 function setDashboardMonth(monthKey) {
@@ -1466,57 +1508,14 @@ function saveCurrentOrder() {
   });
 }
 
-function downloadTextFile(fileName, content, mimeType) {
-  var blob = new Blob([content], { type: mimeType || "application/json" });
-  var url = URL.createObjectURL(blob);
-  var link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-}
-
-function exportLocalData() {
-  var exportedAt = new Date();
-  var meta = saveBackupMeta({ lastExportedAt: exportedAt.toISOString() });
-  var payload = buildExportPayload(loadOrders(), currentConfig, meta);
-  var stamp = exportedAt.getFullYear() + String(exportedAt.getMonth() + 1).padStart(2, "0") + String(exportedAt.getDate()).padStart(2, "0") + "-" + String(exportedAt.getHours()).padStart(2, "0") + String(exportedAt.getMinutes()).padStart(2, "0");
-  downloadTextFile("resin-tile-orders-" + stamp + ".json", JSON.stringify(payload, null, 2), "application/json");
-  setDataStatus("已导出 JSON 备份。", false);
-  renderDataStatus();
-}
-
-function importLocalData(file) {
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function (event) {
-    try {
-      var text = String(event.target.result || "");
-      var parsed = readImportPayload(text);
-      var replace = window.confirm("导入文件包含 " + parsed.orders.length + " 条订单。\n\n选择“确定”将覆盖当前数据；选择“取消”将与当前数据合并。");
-      var result = importOrdersFromPayload(parsed, replace ? "replace" : "merge");
-      if (result.settings && window.confirm("导入文件包含系统配置，是否一并恢复？")) {
-        saveConfig(result.settings);
-        currentConfig = loadConfig();
-        shippingPage.applyConfig(currentConfig);
-        adminPage.refreshFromConfig(currentConfig);
-      }
-      setDataStatus("已导入 " + result.importedCount + " 条订单。", false);
-      recordDetail.hidden = true;
-      renderAll();
-    } catch (error) {
-      setDataStatus(error.message || "导入失败，请检查 JSON 文件。", true);
-      window.alert(error.message || "导入失败，请检查 JSON 文件。");
-    } finally {
-      importDataFile.value = "";
-    }
-  };
-  reader.readAsText(file, "utf-8");
-}
-
 document.addEventListener("click", function (event) {
+  var lightboxButton = event.target.closest("[data-map-lightbox-src]");
+  if (lightboxButton) {
+    event.preventDefault();
+    openMapImageLightbox(lightboxButton.getAttribute("data-map-lightbox-src"), lightboxButton.getAttribute("data-map-lightbox-caption"));
+    return;
+  }
+
   var viewButton = event.target.closest("[data-app-view]");
   if (viewButton) {
     showView(viewButton.getAttribute("data-app-view"));
@@ -1596,13 +1595,52 @@ if (dashboardNextMonth) {
 trendRangeButtons.forEach(function (button) {
   button.addEventListener("click", function () {
     activeTrendRange = button.getAttribute("data-trend-range") || "7d";
+    hideTrendPointDetail();
     renderDashboard();
   });
 });
 
+if (orderTrendChart) {
+  orderTrendChart.addEventListener("click", function (event) {
+    var point = event.target.closest("[data-trend-key]");
+    if (!point) return;
+    activeTrendPointKey = point.getAttribute("data-trend-key") || "";
+    renderTrendPointDetail(activeTrendPointKey);
+  });
+
+  orderTrendChart.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    var point = event.target.closest("[data-trend-key]");
+    if (!point) return;
+    event.preventDefault();
+    activeTrendPointKey = point.getAttribute("data-trend-key") || "";
+    renderTrendPointDetail(activeTrendPointKey);
+  });
+}
+
+if (trendPointDetail) {
+  trendPointDetail.addEventListener("click", function (event) {
+    if (!event.target.closest("[data-trend-detail-close]")) return;
+    hideTrendPointDetail();
+  });
+}
+
 if (orderMapRetry) {
   orderMapRetry.addEventListener("click", retryOrderMapLoad);
 }
+
+if (mapImageLightboxClose) mapImageLightboxClose.addEventListener("click", closeMapImageLightbox);
+if (mapImageLightbox) {
+  mapImageLightbox.addEventListener("click", function (event) {
+    if (event.target === mapImageLightbox) closeMapImageLightbox();
+  });
+}
+
+document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape" && mapImageLightbox && !mapImageLightbox.hidden) {
+    closeMapImageLightbox();
+  }
+});
 
 [historyDateFilter, historyOrderSearch, historyCustomerSearch].forEach(function (input) {
   input.addEventListener("input", renderHistory);
@@ -1661,7 +1699,7 @@ closeRecordDetail.addEventListener("click", function () {
 
 clearAllOrdersBtn.addEventListener("click", function () {
   if (!window.confirm("确定清空全部订单数据吗？此操作不可撤销。")) return;
-  if (!window.confirm("请再次确认：清空后只能通过之前导出的 JSON 备份恢复。")) return;
+  if (!window.confirm("请再次确认：清空后需要重新创建订单或从后台恢复。")) return;
   clearOrdersWithApiFallback().then(function () {
     recordDetail.hidden = true;
     renderAll();
@@ -1671,12 +1709,6 @@ clearAllOrdersBtn.addEventListener("click", function () {
     });
     renderAll();
   });
-});
-
-exportDataBtn.addEventListener("click", exportLocalData);
-importDataFile.addEventListener("change", function (event) {
-  var file = event.target.files && event.target.files[0];
-  importLocalData(file);
 });
 
 subscribeConfigChange(function (nextConfig) {

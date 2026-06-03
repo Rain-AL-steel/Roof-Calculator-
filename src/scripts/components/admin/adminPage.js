@@ -2,7 +2,6 @@ import {
   cloneConfig,
   createConfigId,
   exportConfigJson,
-  importConfigJson,
   resetConfig,
   saveConfig,
   validateConfig
@@ -135,7 +134,6 @@ function renderAdmin(draft) {
   return "<div class='admin-actions-bar'>" +
     "<button type='button' class='btn btn-primary' id='adminSave'>保存配置</button>" +
     "<button type='button' class='btn btn-neutral' id='adminExport'>导出配置 JSON</button>" +
-    "<label class='btn btn-neutral admin-import-label' for='adminImportFile'>导入配置 JSON</label><input id='adminImportFile' class='visually-hidden-file' type='file' accept='application/json,.json' />" +
     "<button type='button' class='btn btn-danger' id='adminReset'>恢复默认配置</button>" +
     "</div><div class='admin-status' id='adminStatus' role='status'></div>" +
     "<section class='admin-section'><div class='admin-section-head'><h3>基础参数</h3></div><div class='admin-form-grid'>" +
@@ -292,22 +290,6 @@ export function initAdminPage(options) {
     showStatus("配置 JSON 已导出。", false);
   }
 
-  function importDraft(file) {
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function (event) {
-      try {
-        draft = cloneConfig(importConfigJson(String(event.target.result || "")));
-        render();
-        showStatus("配置已导入并保存。", false);
-      } catch (error) {
-        showStatus(error.message || "配置导入失败。", true);
-        window.alert(error.message || "配置导入失败。");
-      }
-    };
-    reader.readAsText(file, "utf-8");
-  }
-
   function resetDraft() {
     if (!window.confirm("确认恢复默认配置？当前自定义配置会被覆盖。")) return;
     try {
@@ -346,11 +328,6 @@ export function initAdminPage(options) {
 
   root.addEventListener("change", function (event) {
     var target = event.target;
-    if (target.id === "adminImportFile") {
-      importDraft(target.files && target.files[0]);
-      target.value = "";
-      return;
-    }
     if (target.id === "adminLogoUpload") {
       uploadDefaultLogo(target.files && target.files[0]);
       target.value = "";

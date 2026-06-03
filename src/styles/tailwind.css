@@ -737,7 +737,6 @@
 
   .metric-card span,
   .metric-list span,
-  .data-status-grid span,
   .detail-summary span {
     @apply text-[0.78rem] font-black text-app-muted;
   }
@@ -747,68 +746,18 @@
   }
 
   .metric-list,
-  .data-status-grid,
   .detail-summary {
     @apply grid grid-cols-1 gap-2 md:grid-cols-3;
   }
 
   .metric-list div,
-  .data-status-grid div,
   .detail-summary div {
     @apply grid gap-1 rounded-app border border-app-line bg-app-surface-soft p-3;
   }
 
   .metric-list strong,
-  .data-status-grid strong,
   .detail-summary strong {
     @apply font-mono text-[1.1rem] font-black text-app-text;
-    overflow-wrap: anywhere;
-  }
-
-  .order-list {
-    @apply grid gap-3;
-  }
-
-  .recent-orders-panel .section-head {
-    @apply items-start;
-  }
-
-  .recent-orders-panel .section-head > div {
-    @apply min-w-0;
-  }
-
-  .order-card {
-    @apply grid min-w-0 gap-3 rounded-app border border-app-line bg-app-surface-soft p-3.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center;
-  }
-
-  .order-card-main {
-    @apply grid min-w-0 gap-1;
-  }
-
-  .order-card-title {
-    @apply block text-[1rem] font-black leading-[1.18] text-app-text md:text-[1.04rem];
-    overflow-wrap: anywhere;
-  }
-
-  .order-card-meta {
-    @apply block text-[0.78rem] font-extrabold leading-[1.4] text-app-muted;
-    overflow-wrap: anywhere;
-  }
-
-  .order-card-facts {
-    @apply grid min-w-0 grid-cols-1 gap-2 md:flex md:flex-wrap md:justify-end;
-  }
-
-  .order-card-fact {
-    @apply grid min-w-0 gap-1 rounded-[12px] border border-app-line bg-white px-3 py-2 md:min-w-[116px];
-  }
-
-  .order-card-label {
-    @apply text-[0.72rem] font-black leading-none text-app-muted;
-  }
-
-  .order-card-value {
-    @apply block text-[0.92rem] font-black leading-[1.22] text-app-text;
     overflow-wrap: anywhere;
   }
 
@@ -816,17 +765,46 @@
     @apply grid gap-2.5;
   }
 
-  .trend-insight-grid {
-    @apply grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-stretch;
+  .trend-body {
+    @apply grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(190px,230px)_minmax(0,1fr)] lg:items-stretch;
   }
 
-  .trend-body,
   .trend-chart-column {
     @apply grid min-w-0 gap-2.5;
   }
 
-  .trend-meta-row {
-    @apply grid min-w-0 grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center;
+  .trend-order-panel {
+    @apply grid min-h-0 rounded-app-lg border border-app-line bg-app-surface-soft p-2.5;
+  }
+
+  .trend-order-head {
+    @apply mb-2 flex items-center justify-between gap-2;
+  }
+
+  .trend-order-head h3 {
+    @apply m-0 text-[0.88rem] font-black text-app-text;
+  }
+
+  .trend-order-list {
+    @apply grid max-h-[206px] min-h-0 gap-2 overflow-y-auto pr-1;
+  }
+
+  .trend-order-item {
+    @apply grid min-w-0 gap-1 rounded-[12px] border border-app-line bg-white px-3 py-2;
+  }
+
+  .trend-order-item strong,
+  .trend-order-item span {
+    @apply block min-w-0 leading-[1.25];
+    overflow-wrap: anywhere;
+  }
+
+  .trend-order-item strong {
+    @apply text-[0.86rem] font-black text-app-text;
+  }
+
+  .trend-order-item span {
+    @apply text-[0.74rem] font-extrabold text-app-muted;
   }
 
   .range-switch {
@@ -845,24 +823,8 @@
     @apply bg-white text-app-primary shadow-app-soft;
   }
 
-  .trend-stats {
-    @apply grid grid-cols-1 gap-2 md:grid-cols-2;
-  }
-
-  .trend-stats div {
-    @apply grid gap-1 rounded-app border border-app-line bg-app-surface-soft px-3 py-2.5;
-  }
-
-  .trend-stats span {
-    @apply text-[0.78rem] font-black text-app-muted;
-  }
-
-  .trend-stats strong {
-    @apply font-mono text-[1rem] font-black text-app-text;
-  }
-
   .trend-legend {
-    @apply flex flex-wrap items-center gap-3 text-[0.78rem] font-black text-app-muted;
+    @apply absolute bottom-2 right-2 z-[4] flex flex-wrap items-center justify-end gap-2 rounded-[10px] border border-app-line bg-white/95 px-2.5 py-1.5 text-[0.74rem] font-black text-app-muted;
   }
 
   .trend-legend span {
@@ -874,19 +836,19 @@
   }
 
   .legend-dot.count {
-    @apply bg-app-primary;
+    background: #8f1d2c;
   }
 
   .legend-dot.amount {
-    @apply bg-app-accent;
+    background: #c65a3a;
   }
 
   .trend-chart-wrap {
-    @apply relative min-h-[190px] overflow-hidden rounded-app-lg border border-app-line bg-white p-1.5;
+    @apply relative min-h-[206px] overflow-hidden rounded-app-lg border border-app-line bg-white p-1.5;
   }
 
   .trend-chart {
-    @apply block h-[180px] min-w-0 w-full;
+    @apply block h-[196px] min-w-0 w-full;
   }
 
   .trend-chart.is-muted {
@@ -907,11 +869,11 @@
   }
 
   .chart-line.count {
-    @apply stroke-app-primary;
+    stroke: #8f1d2c;
   }
 
   .chart-line.amount {
-    @apply stroke-app-accent;
+    stroke: #c65a3a;
     stroke-width: 3;
   }
 
@@ -921,11 +883,27 @@
   }
 
   .chart-dot.count {
-    @apply fill-app-primary;
+    fill: #8f1d2c;
   }
 
   .chart-dot.amount {
-    @apply fill-app-accent;
+    fill: #c65a3a;
+  }
+
+  .chart-hit-area {
+    @apply cursor-pointer;
+    fill: transparent;
+    pointer-events: all;
+  }
+
+  .chart-point-group {
+    @apply outline-none;
+  }
+
+  .chart-point-group:focus-visible .chart-dot,
+  .chart-point-group.is-active .chart-dot {
+    stroke: #1f1717;
+    stroke-width: 3;
   }
 
   .chart-label {
@@ -934,6 +912,53 @@
 
   .trend-chart-wrap .empty-note {
     @apply absolute left-4 right-4 top-1/2 -translate-y-1/2 bg-white/95;
+  }
+
+  .trend-order-empty {
+    @apply mt-1 px-3 py-3 text-[0.8rem];
+  }
+
+  .trend-point-detail {
+    @apply absolute left-2 top-2 z-[5] max-h-[146px] w-[320px] overflow-hidden rounded-app border border-app-line bg-white/95 p-2.5 text-app-text;
+    max-width: calc(100% - 1rem);
+    box-shadow: 0 18px 38px rgba(89, 56, 19, 0.14);
+  }
+
+  .trend-detail-head {
+    @apply mb-2 flex items-center justify-between gap-2;
+  }
+
+  .trend-detail-head span {
+    @apply font-mono text-[0.78rem] font-black text-app-text;
+  }
+
+  .trend-detail-close {
+    @apply size-7 rounded-[8px];
+  }
+
+  .trend-detail-list {
+    @apply grid max-h-[96px] gap-1.5 overflow-y-auto pr-1;
+  }
+
+  .trend-detail-order {
+    @apply grid grid-cols-[74px_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] bg-app-surface-soft px-2 py-1.5 text-[0.74rem] font-extrabold;
+  }
+
+  .trend-detail-order time {
+    @apply font-mono text-app-muted;
+  }
+
+  .trend-detail-order strong {
+    @apply min-w-0 text-app-text;
+    overflow-wrap: anywhere;
+  }
+
+  .trend-detail-order span {
+    @apply font-mono text-app-primary-dark;
+  }
+
+  .trend-detail-empty {
+    @apply m-0 rounded-[10px] bg-app-surface-soft px-2 py-2 text-[0.78rem] font-extrabold text-app-muted;
   }
 
   .order-map-card {
@@ -971,11 +996,11 @@
   }
 
   .order-map-wrap {
-    @apply relative z-[1] min-h-[340px] overflow-visible rounded-app-lg border border-app-line bg-white;
+    @apply relative z-[1] min-h-[380px] overflow-visible rounded-app-lg border border-app-line bg-white md:min-h-[430px];
   }
 
   .order-map {
-    @apply relative z-0 h-[340px] w-full rounded-app-lg;
+    @apply relative z-0 h-[380px] w-full rounded-app-lg md:h-[430px];
   }
 
   .map-empty-state {
@@ -993,47 +1018,6 @@
 
   .map-retry-btn {
     @apply mt-3 min-h-9 rounded-[10px] border border-app-primary/30 bg-white px-3 py-1.5 text-[0.8rem] font-black text-app-primary transition duration-200 ease-app-out hover:bg-app-primary-soft;
-  }
-
-  .map-order-list {
-    @apply grid max-h-[210px] gap-2 overflow-y-auto pr-1;
-  }
-
-  .map-order-empty {
-    @apply rounded-app border border-app-line bg-white px-3 py-2.5 text-[0.82rem] font-extrabold text-app-muted;
-  }
-
-  .map-order-item {
-    @apply grid min-w-0 grid-cols-1 items-start gap-2 rounded-app border border-app-line bg-white p-2.5 md:grid-cols-[86px_minmax(0,1fr)_auto];
-  }
-
-  .map-order-item time {
-    @apply w-fit rounded-[9px] border border-app-line bg-app-surface-soft px-2 py-1 text-center font-mono text-[0.72rem] font-black text-app-text md:w-auto;
-  }
-
-  .map-order-item strong {
-    @apply block text-[0.86rem] font-black leading-[1.15] text-app-text;
-  }
-
-  .map-order-item span,
-  .map-order-item p {
-    @apply m-0 mt-1 text-[0.76rem] font-extrabold leading-[1.35] text-app-muted;
-  }
-
-  .map-order-item p {
-    @apply col-span-full md:col-start-2 md:col-end-4;
-  }
-
-  .map-order-item em {
-    @apply rounded-[9px] border px-2 py-1 text-[0.72rem] not-italic font-black;
-  }
-
-  .map-order-item em.is-ready {
-    @apply border-app-primary/30 text-app-primary;
-  }
-
-  .map-order-item em.is-pending {
-    @apply border-app-accent/30 text-app-accent;
   }
 
   .order-map-marker,
@@ -1096,15 +1080,44 @@
   }
 
   .order-map-info-image {
-    @apply mt-2 overflow-hidden rounded-[10px] border border-app-line bg-white;
+    @apply mt-2 block w-full overflow-hidden rounded-[10px] border border-app-line bg-white p-0 text-left;
   }
 
   .order-map-info-image img {
-    @apply block h-[92px] w-full object-cover;
+    @apply block h-[116px] w-full object-cover;
+  }
+
+  .order-map-info-image.is-clickable {
+    @apply cursor-zoom-in transition duration-200 ease-app-out hover:border-app-primary hover:shadow-app-soft;
   }
 
   .order-map-info-image.is-empty {
     @apply flex min-h-[76px] items-center justify-center px-3 py-2 text-center text-[0.74rem] font-extrabold text-app-muted;
+  }
+
+  .image-lightbox {
+    @apply fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-3 py-4;
+  }
+
+  body.image-lightbox-open {
+    @apply overflow-hidden;
+  }
+
+  .image-lightbox-frame {
+    @apply m-0 grid max-h-[92vh] w-full max-w-[980px] place-items-center gap-2;
+  }
+
+  .image-lightbox-frame img {
+    @apply block max-h-[84vh] max-w-full rounded-app-lg bg-white object-contain;
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.32);
+  }
+
+  .image-lightbox-frame figcaption {
+    @apply rounded-[10px] bg-white/95 px-3 py-1.5 text-center text-[0.82rem] font-black text-app-text;
+  }
+
+  .image-lightbox-close {
+    @apply absolute right-3 top-3 inline-flex size-10 items-center justify-center rounded-[12px] border border-white/25 bg-white/95 text-app-text transition duration-200 ease-app-out hover:bg-white;
   }
 
   .history-filters {
@@ -1237,22 +1250,6 @@
     @apply rounded-app border border-app-line bg-app-surface-soft p-3 text-[0.88rem] font-extrabold text-app-muted;
   }
 
-  .data-note {
-    @apply mb-0 mt-3 min-h-[22px] text-[0.88rem] font-extrabold text-app-muted;
-  }
-
-  .data-note.is-success {
-    @apply text-app-primary-dark;
-  }
-
-  .data-note.is-error {
-    @apply text-app-danger;
-  }
-
-  .import-trigger {
-    @apply cursor-pointer;
-  }
-
   .empty-note {
     @apply hidden rounded-app-lg border border-dashed border-app-line-strong px-4 py-6 text-center font-extrabold text-app-muted;
     background: var(--surface-soft);
@@ -1279,10 +1276,6 @@
   .admin-actions-bar {
     @apply sticky top-2.5 z-[2] grid grid-cols-2 items-center gap-2 rounded-app-lg border border-app-line bg-white p-3 shadow-app-soft md:flex md:flex-wrap;
     box-shadow: var(--shadow-soft);
-  }
-
-  .admin-import-label {
-    @apply m-0;
   }
 
   .visually-hidden-file {

@@ -155,7 +155,7 @@
         <div class="brand-block">
           <div class="brand-mark" aria-hidden="true"><svg class="ui-icon"><use href="#icon-layers"></use></svg></div>
           <div>
-            <p class="eyebrow">v2.0 本地订单工具</p>
+            <p class="eyebrow">v2.0 ERP 订单工具</p>
             <h1>ERP计算器</h1>
           </div>
         </div>
@@ -167,8 +167,7 @@
       <nav class="workspace-tabs" aria-label="业务模块">
         <button type="button" class="workspace-tab active" data-app-view="dashboardView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg><span>首页</span></button>
         <button type="button" class="workspace-tab" data-app-view="shippingView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>打单计算机</span></button>
-        <button type="button" class="workspace-tab" data-app-view="historyView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg><span>历史记录</span></button>
-        <button type="button" class="workspace-tab" data-app-view="dataView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-database"></use></svg><span>数据管理</span></button>
+        <button type="button" class="workspace-tab" data-app-view="historyView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg><span>订单详细</span></button>
       </nav>
     </header>
 
@@ -208,7 +207,7 @@
           <div class="section-head compact">
             <div>
               <h2>历史累计</h2>
-              <p class="subtext">统计当前浏览器本地保存的数据。</p>
+              <p class="subtext">统计当前订单数据。</p>
             </div>
           </div>
           <div class="metric-list">
@@ -232,19 +231,23 @@
           </div>
         </div>
         <div class="trend-body">
-          <div class="trend-meta-row">
-            <div class="trend-stats">
-              <div><span>范围内订单数</span><strong id="trendTotalCount">0</strong></div>
-              <div><span>范围内订单金额</span><strong id="trendTotalAmount">0.00</strong></div>
+          <aside class="trend-order-panel" aria-label="趋势范围订单">
+            <div class="trend-order-head">
+              <h3>范围订单</h3>
             </div>
-            <div class="trend-legend" aria-label="图例">
-              <span><i class="legend-dot count"></i>订单数量</span>
-              <span><i class="legend-dot amount"></i>订单金额</span>
+            <div class="trend-order-list" id="trendOrderList"></div>
+            <div class="empty-note trend-order-empty" id="trendOrderEmpty">当前范围暂无订单</div>
+          </aside>
+          <div class="trend-chart-column">
+            <div class="trend-chart-wrap">
+              <svg id="orderTrendChart" class="trend-chart" viewBox="0 0 920 220" role="img" aria-label="订单趋势折线图"></svg>
+              <div class="trend-point-detail" id="trendPointDetail" hidden></div>
+              <div class="trend-legend" aria-label="图例">
+                <span><i class="legend-dot count"></i>订单数量</span>
+                <span><i class="legend-dot amount"></i>订单金额</span>
+              </div>
+              <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
             </div>
-          </div>
-          <div class="trend-chart-wrap">
-            <svg id="orderTrendChart" class="trend-chart" viewBox="0 0 920 220" role="img" aria-label="订单趋势折线图"></svg>
-            <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
           </div>
         </div>
       </section>
@@ -253,7 +256,7 @@
         <div class="map-panel-head">
           <div>
             <h2>订单地图</h2>
-            <p class="subtext" id="orderMapSubtitle">地图跟随趋势时间范围显示出货订单。</p>
+            <p class="subtext" id="orderMapSubtitle">查看全部已定位订单。</p>
           </div>
           <span class="map-status-pill" id="orderMapStatus">待配置</span>
         </div>
@@ -264,19 +267,6 @@
             <button type="button" class="map-retry-btn" id="orderMapRetry" hidden>重新加载地图</button>
           </div>
         </div>
-        <div class="map-order-list" id="orderMapOrderList" aria-label="地图订单信息"></div>
-      </section>
-
-      <section class="dashboard-panel recent-orders-panel">
-        <div class="section-head compact">
-          <div>
-            <h2>最近订单</h2>
-            <p class="subtext">保存后会立即出现在这里和历史记录中。</p>
-          </div>
-          <button type="button" class="btn btn-soft" data-app-view="shippingView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg><span>新建订单</span></button>
-        </div>
-        <div class="order-list" id="recentOrderList"></div>
-        <div class="empty-note" id="recentOrderEmpty">暂无订单记录</div>
       </section>
     </section>
 
@@ -504,8 +494,8 @@
       <header class="app-header">
         <div class="title-row">
           <div class="title-block">
-            <h1>历史记录</h1>
-            <p>按日期、订单编号或客户名称查找本地保存的订单。</p>
+            <h1>订单详细</h1>
+            <p>按日期、订单编号或客户名称查找订单。</p>
           </div>
           <button type="button" class="btn btn-danger" id="clearAllOrders"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg><span>清空全部数据</span></button>
         </div>
@@ -556,45 +546,13 @@
           <div class="section-head compact">
             <div>
               <h2 id="recordDetailTitle">订单详情</h2>
-              <p class="subtext" id="recordDetailSubtitle">查看或编辑已保存记录。</p>
+              <p class="subtext" id="recordDetailSubtitle">查看或编辑已保存订单。</p>
             </div>
             <button type="button" class="icon-btn" id="closeRecordDetail" title="关闭详情" aria-label="关闭详情"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg></button>
           </div>
           <div id="recordDetailBody"></div>
         </aside>
       </div>
-    </section>
-
-    <section id="dataView" class="business-view data-view" hidden>
-      <header class="app-header">
-        <div class="title-row">
-          <div class="title-block">
-            <h1>数据管理</h1>
-            <p>本阶段所有数据保存在当前浏览器，请定期导出 JSON 备份。</p>
-          </div>
-          <div class="quick-facts">
-            <button type="button" class="btn btn-primary" id="exportData"><svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg><span>导出 JSON</span></button>
-            <label class="btn btn-soft import-trigger" for="importDataFile"><svg class="ui-icon" aria-hidden="true"><use href="#icon-upload"></use></svg><span>导入 JSON</span></label>
-            <input class="visually-hidden-file" id="importDataFile" type="file" accept="application/json,.json" />
-          </div>
-        </div>
-      </header>
-
-      <section class="dashboard-panel">
-        <div class="section-head compact">
-          <div>
-            <h2>本地数据状态</h2>
-            <p class="subtext">只统计当前浏览器的 localStorage 数据。</p>
-          </div>
-        </div>
-        <div class="data-status-grid">
-          <div><span>当前记录数</span><strong id="dataOrderCount">0</strong></div>
-          <div><span>最近一次保存</span><strong id="dataLastSaved">未保存</strong></div>
-          <div><span>最近一次导出</span><strong id="dataLastExported">未导出</strong></div>
-          <div><span>最近一次导入</span><strong id="dataLastImported">未导入</strong></div>
-        </div>
-        <p class="data-note" id="dataStatusMessage" role="status"></p>
-      </section>
     </section>
 
     <section id="adminView" class="admin-view" hidden>
@@ -609,6 +567,14 @@
       </header>
       <main class="admin-root" id="adminRoot"></main>
     </section>
+  </div>
+
+  <div class="image-lightbox" id="mapImageLightbox" role="dialog" aria-modal="true" aria-label="地图展示图片预览" hidden>
+    <button type="button" class="image-lightbox-close" id="mapImageLightboxClose" aria-label="关闭图片预览"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg></button>
+    <figure class="image-lightbox-frame">
+      <img id="mapImageLightboxImg" alt="地图展示图片预览" />
+      <figcaption id="mapImageLightboxCaption"></figcaption>
+    </figure>
   </div>
 
   <script src="./runtime-config.js"></script>
