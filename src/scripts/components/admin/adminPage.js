@@ -3,7 +3,7 @@ import {
   createConfigId,
   exportConfigJson,
   resetConfig,
-  saveConfig,
+  saveConfigWithApiFallback,
   validateConfig
 } from "../../services/configService.js";
 import { escapeHtml } from "../../utils.js";
@@ -186,6 +186,7 @@ export function initAdminPage(options) {
   var getConfig = options.getConfig;
   var root = document.getElementById("adminRoot");
   var draft = cloneConfig(getConfig());
+  var isSavingConfig = false;
 
   function showStatus(message, isError) {
     var status = document.getElementById("adminStatus");
@@ -197,6 +198,13 @@ export function initAdminPage(options) {
 
   function render() {
     root.innerHTML = renderAdmin(draft);
+  }
+
+  function setSaveBusy(isBusy) {
+    var saveButton = document.getElementById("adminSave");
+    if (!saveButton) return;
+    saveButton.disabled = Boolean(isBusy);
+    saveButton.textContent = isBusy ? "保存中..." : "保存配置";
   }
 
   function updateSimpleField(target) {
@@ -262,19 +270,31 @@ export function initAdminPage(options) {
   }
 
   function saveDraft() {
+    if (isSavingConfig) return;
     var result = validateConfig(draft);
     if (!result.valid) {
       showStatus(result.errors.join("；"), true);
       return;
     }
-    try {
-      draft = cloneConfig(saveConfig(draft));
+    isSavingConfig = true;
+    setSaveBusy(true);
+    showStatus("正在保存配置...", false);
+    var savedLocallyOnly = false;
+    saveConfigWithApiFallback(draft, {
+      onFallback: function () {
+        savedLocallyOnly = true;
+      }
+    }).then(function (savedConfig) {
+      draft = cloneConfig(savedConfig);
       render();
-      showStatus("配置已保存，出货单页面已更新。", false);
-    } catch (error) {
+      showStatus(savedLocallyOnly ? "配置已保存到本机，但服务器同步失败。" : "配置已保存并同步到服务器，出货单页面已更新。", savedLocallyOnly);
+    }).catch(function (error) {
       showStatus(error.message || "配置保存失败。", true);
       window.alert(error.message || "配置保存失败。");
-    }
+    }).finally(function () {
+      isSavingConfig = false;
+      setSaveBusy(false);
+    });
   }
 
   function exportDraft() {

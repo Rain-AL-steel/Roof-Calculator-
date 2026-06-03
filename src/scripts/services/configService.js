@@ -247,7 +247,8 @@ export function loadConfigWithApiFallback() {
   });
 }
 
-export function saveConfigWithApiFallback(config) {
+export function saveConfigWithApiFallback(config, options) {
+  var details = options || {};
   var normalized = getValidConfig(config);
   return saveConfigToApi(normalized).then(function (payload) {
     var savedConfig = payload && isPlainObject(payload.config) ? payload.config : normalized;
@@ -256,8 +257,10 @@ export function saveConfigWithApiFallback(config) {
     } catch (error) {
       return mirrorConfigToLocalStorage(normalized);
     }
-  }).catch(function () {
-    return saveConfig(normalized);
+  }).catch(function (error) {
+    var saved = saveConfig(normalized);
+    if (typeof details.onFallback === "function") details.onFallback(error);
+    return saved;
   });
 }
 

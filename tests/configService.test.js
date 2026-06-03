@@ -226,6 +226,7 @@ describe("config service API fallback", function () {
 
   it("keeps user changes by saving locally when API save fails", async function () {
     var config = makeConfig({ basics: Object.assign({}, defaultConfig.basics, { companyName: "Saved Local" }) });
+    var fallbackCalled = false;
     useHttpApiRuntime(function () {
       return Promise.resolve({
         ok: false,
@@ -236,11 +237,16 @@ describe("config service API fallback", function () {
       });
     });
 
-    var saved = await saveConfigWithApiFallback(config);
+    var saved = await saveConfigWithApiFallback(config, {
+      onFallback: function () {
+        fallbackCalled = true;
+      }
+    });
     var stored = readStoredConfig();
 
     expect(saved.basics.companyName).toBe("Saved Local");
     expect(stored.basics.companyName).toBe("Saved Local");
+    expect(fallbackCalled).toBe(true);
   });
 
   it("keeps existing synchronous loadConfig and saveConfig behavior", function () {
