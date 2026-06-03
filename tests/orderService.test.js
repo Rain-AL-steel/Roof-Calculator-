@@ -19,9 +19,11 @@ import {
 import {
   clearApiAuth,
   deleteOrderMapImageFromApi,
+  fetchConfigFromApi,
   fetchOrderMapImageBlobFromApi,
   getApiAuthToken,
   loginToApi,
+  saveConfigToApi,
   uploadOrderMapImageToApi
 } from "../src/scripts/services/apiClient.js";
 
@@ -311,6 +313,79 @@ describe("order service", function () {
 
     expect(orders).toHaveLength(0);
     expect(getApiAuthToken()).toBe("");
+  });
+
+  it("fetches frontend config through the API with bearer auth", async function () {
+    var requestedUrl = "";
+    var requestedOptions = null;
+    useHttpApiRuntime(function (url, options) {
+      if (url === "/api/auth/login") {
+        return jsonResponse({ token: "config-read-token", tokenType: "Bearer" });
+      }
+      requestedUrl = url;
+      requestedOptions = options;
+      return jsonResponse({
+        config: { version: 1, mapSettings: { enabled: true } },
+        source: "database"
+      });
+    });
+
+    await loginToApi("admin", "secret");
+    var payload = await fetchConfigFromApi();
+
+    expect(requestedUrl).toBe("/api/config");
+    expect(requestedOptions.method).toBeUndefined();
+    expect(requestedOptions.headers.Authorization).toBe("Bearer config-read-token");
+    expect(payload.source).toBe("database");
+    expect(payload.config.mapSettings.enabled).toBe(true);
+  });
+
+  it("saves frontend config through the API with JSON body and bearer auth", async function () {
+    var requestedUrl = "";
+    var requestedOptions = null;
+    var config = { version: 2, basics: { fixedWidth: 1.05 } };
+    useHttpApiRuntime(function (url, options) {
+      if (url === "/api/auth/login") {
+        return jsonResponse({ token: "config-write-token", tokenType: "Bearer" });
+      }
+      requestedUrl = url;
+      requestedOptions = options;
+      return jsonResponse({ config: config, source: "database" });
+    });
+
+    await loginToApi("admin", "secret");
+    var payload = await saveConfigToApi(config);
+
+    expect(requestedUrl).toBe("/api/config");
+    expect(requestedOptions.method).toBe("PUT");
+    expect(requestedOptions.headers.Authorization).toBe("Bearer config-write-token");
+    expect(requestedOptions.headers["Content-Type"]).toBe("application/json");
+    expect(requestedOptions.body).toBe(JSON.stringify({ config: config }));
+    expect(payload).toEqual({ config: config, source: "database" });
+  });
+
+  it("throws the existing API error shape when config API requests fail", async function () {
+    useHttpApiRuntime(function () {
+      return Promise.resolve({
+        ok: false,
+        status: 400,
+        text: function () {
+          return Promise.resolve(JSON.stringify({ code: "INVALID_CONFIG_PAYLOAD", message: "Config payload is invalid." }));
+        }
+      });
+    });
+
+    var error = null;
+    try {
+      await saveConfigToApi([]);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeTruthy();
+    expect(error.status).toBe(400);
+    expect(error.code).toBe("INVALID_CONFIG_PAYLOAD");
+    expect(error.message).toBe("Config payload is invalid.");
   });
 
   it("uploads order map images through multipart API requests", async function () {

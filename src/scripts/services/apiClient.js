@@ -220,6 +220,22 @@ export function loginToApi(username, password) {
   });
 }
 
+export function fetchConfigFromApi() {
+  return apiRequest("/config", {
+    timeoutMs: ORDER_READ_TIMEOUT_MS
+  });
+}
+
+export function saveConfigToApi(config) {
+  return apiRequest("/config", {
+    method: "PUT",
+    timeoutMs: ORDER_WRITE_TIMEOUT_MS,
+    body: {
+      config: config
+    }
+  });
+}
+
 export function fetchOrdersFromApi() {
   return apiRequest("/orders", {
     timeoutMs: ORDER_READ_TIMEOUT_MS
