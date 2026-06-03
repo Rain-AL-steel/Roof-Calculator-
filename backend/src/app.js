@@ -13,6 +13,9 @@ const DEFAULT_CORS_ORIGINS = [
   "http://localhost:5173"
 ];
 const ORDER_MAP_IMAGE_MAX_BYTES = 500 * 1024;
+const FRONTEND_CONFIG_KEY = "app_config";
+const FRONTEND_CONFIG_GROUP = "frontend";
+const FRONTEND_CONFIG_DESCRIPTION = "Frontend application configuration";
 const ORDER_MAP_IMAGE_ALLOWED_TYPES = {
   "image/jpeg": true,
   "image/png": true,
@@ -107,6 +110,16 @@ function createHttpError(statusCode, code, message) {
   error.statusCode = statusCode;
   error.code = code;
   return error;
+}
+
+function isPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  var prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function getConfigVersion(config) {
+  return typeof config.version === "number" && Number.isFinite(config.version) ? Math.trunc(config.version) : 1;
 }
 
 function createOrderMapImageUpload() {
@@ -556,6 +569,56 @@ export function createApp(options) {
       user: toAuthUser(user)
     });
     scheduleLastLoginUpdate(prisma, user.id, req.requestId);
+  }));
+
+  app.use("/api/config", createAuthMiddleware(authOptions));
+
+  app.get("/api/config", asyncHandler(async function (req, res) {
+    var record = await withDatabaseRetry("GET /api/config", function () {
+      return prisma.systemConfig.findUnique({
+        where: { key: FRONTEND_CONFIG_KEY },
+        select: { value: true }
+      });
+    });
+
+    if (!record) {
+      res.json({ config: null, source: "default" });
+      return;
+    }
+
+    res.json({ config: record.value, source: "database" });
+  }));
+
+  app.put("/api/config", asyncHandler(async function (req, res) {
+    var input = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    var config = input.config;
+    if (!isPlainObject(config)) {
+      throw createHttpError(400, "INVALID_CONFIG_PAYLOAD", "Config payload must include a plain object config.");
+    }
+
+    var saved = await withDatabaseRetry("PUT /api/config", function () {
+      return prisma.systemConfig.upsert({
+        where: { key: FRONTEND_CONFIG_KEY },
+        update: {
+          group: FRONTEND_CONFIG_GROUP,
+          value: config,
+          version: getConfigVersion(config),
+          isSecret: false,
+          description: FRONTEND_CONFIG_DESCRIPTION
+        },
+        create: {
+          key: FRONTEND_CONFIG_KEY,
+          group: FRONTEND_CONFIG_GROUP,
+          value: config,
+          version: getConfigVersion(config),
+          isSecret: false,
+          description: FRONTEND_CONFIG_DESCRIPTION
+        },
+        select: { value: true }
+      });
+    });
+
+    res.json({ config: saved.value, source: "database" });
   }));
 
   app.use("/api/orders", createAuthMiddleware(authOptions));

@@ -91,6 +91,7 @@ function createMockPrisma() {
   var ordersById = {};
   var ordersByClientOrderId = {};
   var mapImagesByOrderId = {};
+  var systemConfigsByKey = {};
   var usersByUsername = {};
 
   function storeOrder(order) {
@@ -211,6 +212,7 @@ function createMockPrisma() {
     ordersById: ordersById,
     ordersByClientOrderId: ordersByClientOrderId,
     mapImagesByOrderId: mapImagesByOrderId,
+    systemConfigsByKey: systemConfigsByKey,
     usersByUsername: usersByUsername,
     storeOrder: storeOrder,
     storeUser: storeUser,
@@ -291,6 +293,27 @@ function createMockPrisma() {
             return { count: 1 };
           }
           return { count: 0 };
+        }
+      },
+      systemConfig: {
+        findUnique: async function (args) {
+          recordMockPrismaQuery();
+          captured.systemConfigFindUniqueArgs = captured.systemConfigFindUniqueArgs || [];
+          captured.systemConfigFindUniqueArgs.push(args);
+          return systemConfigsByKey[args.where.key] || null;
+        },
+        upsert: async function (args) {
+          recordMockPrismaQuery();
+          captured.systemConfigUpsertArgs = args;
+          var existing = systemConfigsByKey[args.where.key];
+          var data = existing ? Object.assign({}, existing, args.update) : Object.assign({
+            id: "system-config-" + args.where.key,
+            key: args.create.key,
+            createdAt: new Date("2026-05-30T00:00:00.000Z")
+          }, args.create);
+          data.updatedAt = new Date("2026-05-30T00:00:02.000Z");
+          systemConfigsByKey[data.key] = data;
+          return { value: data.value };
         }
       },
       $queryRaw: async function () {
@@ -570,6 +593,134 @@ describe("backend order API", function () {
 
     expect(response.status).toBe(401);
     expect(body.code).toBe("AUTH_REQUIRED");
+  });
+
+  it("rejects config reads without a bearer token", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/config");
+    var body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.code).toBe("AUTH_REQUIRED");
+  });
+
+  it("rejects config writes without a bearer token", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: { version: 1 } })
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.code).toBe("AUTH_REQUIRED");
+  });
+
+  it("returns the default config source when no app config exists", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/config", {
+      headers: authHeaders()
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ config: null, source: "default" });
+    expect(mock.captured.systemConfigFindUniqueArgs[0]).toMatchObject({
+      where: { key: "app_config" },
+      select: { value: true }
+    });
+  });
+
+  it("writes frontend app config to system config storage", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+    var config = {
+      version: 3,
+      mapSettings: {
+        enabled: true,
+        amapKey: "test-map-key",
+        securityJsCode: "test-security-code",
+        geocodeCity: "泉州市",
+        mapStyle: "amap://styles/whitesmoke"
+      }
+    };
+
+    var response = await fetch(serverInfo.url + "/api/config", {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ config: config })
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ config: config, source: "database" });
+    expect(mock.captured.systemConfigUpsertArgs).toMatchObject({
+      where: { key: "app_config" },
+      update: {
+        group: "frontend",
+        value: config,
+        version: 3,
+        isSecret: false,
+        description: "Frontend application configuration"
+      },
+      create: {
+        key: "app_config",
+        group: "frontend",
+        value: config,
+        version: 3,
+        isSecret: false,
+        description: "Frontend application configuration"
+      },
+      select: { value: true }
+    });
+  });
+
+  it("returns the saved frontend app config from database storage", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+    var config = {
+      version: 4,
+      basics: {
+        fixedWidth: 1.05,
+        companyName: "红波树脂瓦"
+      }
+    };
+
+    var putResponse = await fetch(serverInfo.url + "/api/config", {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ config: config })
+    });
+    var getResponse = await fetch(serverInfo.url + "/api/config", {
+      headers: authHeaders()
+    });
+    var getBody = await getResponse.json();
+
+    expect(putResponse.status).toBe(200);
+    expect(getResponse.status).toBe(200);
+    expect(getBody).toEqual({ config: config, source: "database" });
+  });
+
+  it("rejects non-object frontend config payloads", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/config", {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ config: [] })
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_CONFIG_PAYLOAD");
   });
 
   it("rejects order map image API requests without a bearer token", async function () {
