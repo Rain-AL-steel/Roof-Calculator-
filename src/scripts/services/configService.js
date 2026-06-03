@@ -1,4 +1,5 @@
 import { CONFIG_STORAGE_KEY, CONFIG_VERSION, defaultConfig } from "../config/defaultConfig.js";
+import { fetchConfigFromApi, saveConfigToApi } from "./apiClient.js";
 
 const CONFIG_CHANGE_EVENT = "resin-config-change";
 
@@ -192,6 +193,34 @@ export function getDefaultConfig() {
   return clone(defaultConfig);
 }
 
+function getValidConfig(config) {
+  var result = validateConfig(config);
+  if (!result.valid) {
+    throw new Error(result.errors.join("\n"));
+  }
+  return result.config;
+}
+
+function dispatchConfigChange(config) {
+  window.dispatchEvent(new CustomEvent(CONFIG_CHANGE_EVENT, { detail: config }));
+}
+
+function writeConfigToLocalStorage(config, failureMessage) {
+  var normalized = getValidConfig(config);
+  try {
+    window.localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(normalized));
+  } catch (error) {
+    if (failureMessage) throw new Error(failureMessage);
+    return clone(normalized);
+  }
+  dispatchConfigChange(normalized);
+  return clone(normalized);
+}
+
+function mirrorConfigToLocalStorage(config) {
+  return writeConfigToLocalStorage(config, "");
+}
+
 export function loadConfig() {
   try {
     var raw = window.localStorage.getItem(CONFIG_STORAGE_KEY);
@@ -204,17 +233,32 @@ export function loadConfig() {
 }
 
 export function saveConfig(config) {
-  var result = validateConfig(config);
-  if (!result.valid) {
-    throw new Error(result.errors.join("\n"));
-  }
-  try {
-    window.localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(result.config));
-  } catch (error) {
-    throw new Error("配置保存失败，可能是浏览器存储空间不足。请尝试删除默认 Logo 或导出备份后恢复默认配置。");
-  }
-  window.dispatchEvent(new CustomEvent(CONFIG_CHANGE_EVENT, { detail: result.config }));
-  return clone(result.config);
+  return writeConfigToLocalStorage(config, "配置保存失败，可能是浏览器存储空间不足。请尝试删除默认 Logo 或导出备份后恢复默认配置。");
+}
+
+export function loadConfigWithApiFallback() {
+  return fetchConfigFromApi().then(function (payload) {
+    if (payload && payload.source === "database" && isPlainObject(payload.config)) {
+      return mirrorConfigToLocalStorage(payload.config);
+    }
+    return loadConfig();
+  }).catch(function () {
+    return loadConfig();
+  });
+}
+
+export function saveConfigWithApiFallback(config) {
+  var normalized = getValidConfig(config);
+  return saveConfigToApi(normalized).then(function (payload) {
+    var savedConfig = payload && isPlainObject(payload.config) ? payload.config : normalized;
+    try {
+      return mirrorConfigToLocalStorage(savedConfig);
+    } catch (error) {
+      return mirrorConfigToLocalStorage(normalized);
+    }
+  }).catch(function () {
+    return saveConfig(normalized);
+  });
 }
 
 export function resetConfig() {
