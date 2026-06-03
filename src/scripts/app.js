@@ -9,7 +9,7 @@ import {
   logout,
   setupPassword
 } from "./services/authService.js";
-import { loadConfig, subscribeConfigChange } from "./services/configService.js";
+import { loadConfig, loadConfigWithApiFallback, subscribeConfigChange } from "./services/configService.js";
 import { geocodeDeliveryAddress, getAmapSettings, hasUsableAmapSettings, loadAmap, resetAmapLoadCache } from "./services/amapService.js";
 import {
   deleteOrderMapImageFromApi,
@@ -981,6 +981,36 @@ function queueOrderMapResize() {
   }, 120);
 }
 
+function getMapSettingsSignature(config) {
+  var settings = getAmapSettings(config);
+  return [
+    settings.enabled ? "1" : "0",
+    settings.amapKey,
+    settings.securityJsCode,
+    settings.geocodeCity,
+    settings.mapStyle
+  ].join("|");
+}
+
+function applyConfigToRuntime(nextConfig) {
+  var previousMapSettings = getMapSettingsSignature(currentConfig);
+  var nextMapSettings = getMapSettingsSignature(nextConfig);
+  currentConfig = nextConfig;
+  shippingPage.applyConfig(currentConfig);
+  adminPage.refreshFromConfig(currentConfig);
+  if (previousMapSettings !== nextMapSettings) {
+    resetAmapLoadCache();
+    destroyOrderMapInstance();
+  }
+  if (isAuthenticated()) renderDashboard();
+}
+
+function refreshConfigFromPreferredSource() {
+  loadConfigWithApiFallback().then(function (config) {
+    applyConfigToRuntime(config);
+  });
+}
+
 function hasDraftContent(draft) {
   var items = draft && draft.items ? draft.items : {};
   return Boolean(
@@ -1034,6 +1064,7 @@ function enterApplication() {
   authView.hidden = true;
   renderAll();
   showView("dashboardView");
+  refreshConfigFromPreferredSource();
   refreshOrdersFromPreferredSource();
 }
 
@@ -1712,9 +1743,7 @@ clearAllOrdersBtn.addEventListener("click", function () {
 });
 
 subscribeConfigChange(function (nextConfig) {
-  currentConfig = nextConfig;
-  shippingPage.applyConfig(currentConfig);
-  if (isAuthenticated()) renderDashboard();
+  applyConfigToRuntime(nextConfig);
 });
 
 if (isAuthenticated()) {
