@@ -480,6 +480,40 @@ describe("backend order API", function () {
     expect(new Date(body.timestamp).toString()).not.toBe("Invalid Date");
   });
 
+  it("rate limits repeated failed login attempts without affecting other APIs", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+    var originalError = console.error;
+    console.error = function () {};
+
+    try {
+      var loginResponse;
+      var loginBody;
+      for (var index = 0; index < 11; index += 1) {
+        loginResponse = await fetch(serverInfo.url + "/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: "unknown", password: "wrong-password" })
+        });
+        loginBody = await loginResponse.json();
+      }
+
+      var healthResponse = await fetch(serverInfo.url + "/api/health");
+      var healthBody = await healthResponse.json();
+      var configResponse = await fetch(serverInfo.url + "/api/config");
+      var configBody = await configResponse.json();
+
+      expect(loginResponse.status).toBe(429);
+      expect(loginBody.error).toBe("TOO_MANY_LOGIN_ATTEMPTS");
+      expect(healthResponse.status).toBe(200);
+      expect(healthBody.ok).toBe(true);
+      expect(configResponse.status).toBe(401);
+      expect(configBody.code).toBe("AUTH_REQUIRED");
+    } finally {
+      console.error = originalError;
+    }
+  });
+
   it("logs in with an active bcrypt admin account and returns a JWT", async function () {
     var mock = createMockPrisma();
     mock.storeUser({

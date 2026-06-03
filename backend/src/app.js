@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
+import { rateLimit } from "express-rate-limit";
 import { prisma as defaultPrisma } from "./prisma.js";
 import { createRequestMetrics, roundMetric, runOutsideRequestMetrics, runWithRequestMetrics } from "./requestContext.js";
 import { findUserForLogin, getJwtExpiresIn, getJwtSecret, signAuthToken, toAuthUser, verifyAuthToken, verifyPassword } from "./auth.js";
@@ -21,6 +22,22 @@ const ORDER_MAP_IMAGE_ALLOWED_TYPES = {
   "image/png": true,
   "image/webp": true
 };
+
+function createLoginRateLimiter() {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: function (req, res) {
+      res.status(429).json({
+        code: "TOO_MANY_LOGIN_ATTEMPTS",
+        error: "TOO_MANY_LOGIN_ATTEMPTS",
+        message: "登录尝试过多，请稍后再试"
+      });
+    }
+  });
+}
 
 function parseCorsOrigins(value) {
   return String(value || "")
@@ -542,7 +559,7 @@ export function createApp(options) {
     }
   }));
 
-  app.post("/api/auth/login", asyncHandler(async function (req, res) {
+  app.post("/api/auth/login", createLoginRateLimiter(), asyncHandler(async function (req, res) {
     var secret = getJwtSecret(authOptions);
     if (!secret) {
       throw createHttpError(500, "JWT_SECRET_NOT_CONFIGURED", "JWT secret is not configured.");
