@@ -5,7 +5,9 @@ import {
   classifyMainTileRow,
   clearOrdersWithApiFallback,
   getOrderAmountParts,
+  getOrdersInTrendModeRange,
   getOrdersInTrendRange,
+  getOrderTrendByMode,
   getOrderTrend,
   getOrderStats,
   importOrdersFromPayload,
@@ -217,6 +219,83 @@ describe("order service", function () {
     expect(trend.totalAmount).toBe(190);
   });
 
+  it("builds month-mode trend buckets for every month in a selected year", function () {
+    var orders = [
+      makeOrder("jan", "2026-01-15", 100),
+      makeOrder("may", "2026-05-26", 40),
+      makeOrder("other-year", "2025-12-31", 20),
+      { id: "bad-amount", orderDate: "2026-03-01", totals: { grandAmount: "not-a-number" } }
+    ];
+    var trend = getOrderTrendByMode(orders, { mode: "month", year: 2026 });
+
+    expect(trend.mode).toBe("month");
+    expect(trend.year).toBe(2026);
+    expect(trend.bucketType).toBe("month");
+    expect(trend.points).toHaveLength(12);
+    expect(trend.points[0]).toMatchObject({ key: "2026-01", label: "1月", count: 1, ordersCount: 1, amount: 110, value: 110 });
+    expect(trend.points[2]).toMatchObject({ key: "2026-03", count: 1, amount: 0, value: 0 });
+    expect(trend.points[4]).toMatchObject({ key: "2026-05", count: 1, amount: 50 });
+    expect(trend.totalCount).toBe(3);
+    expect(trend.totalAmount).toBe(160);
+    expect(Number.isNaN(trend.totalAmount)).toBe(false);
+  });
+
+  it("builds quarter-mode trend buckets for every quarter in a selected year", function () {
+    var orders = [
+      makeOrder("q1", "2026-02-15", 100),
+      makeOrder("q2", "2026-04-26", 40),
+      makeOrder("q4", "2026-12-01", 5),
+      makeOrder("other-year", "2025-12-31", 20)
+    ];
+    var trend = getOrderTrendByMode(orders, { mode: "quarter", year: 2026 });
+
+    expect(trend.mode).toBe("quarter");
+    expect(trend.year).toBe(2026);
+    expect(trend.bucketType).toBe("quarter");
+    expect(trend.points).toHaveLength(4);
+    expect(trend.points.map(function (point) { return point.key; })).toEqual(["2026-Q1", "2026-Q2", "2026-Q3", "2026-Q4"]);
+    expect(trend.points.map(function (point) { return point.count; })).toEqual([1, 1, 0, 1]);
+    expect(trend.points.map(function (point) { return point.amount; })).toEqual([110, 50, 0, 15]);
+    expect(trend.totalCount).toBe(3);
+    expect(trend.totalAmount).toBe(175);
+  });
+
+  it("builds year-mode trend buckets by valid order years", function () {
+    var orders = [
+      makeOrder("old", "2024-05-26", 10),
+      makeOrder("new-a", "2026-01-15", 100),
+      { id: "new-b", orderDate: "2026-03-01", totals: { grandAmount: "bad" } },
+      { id: "invalid", orderDate: "not-a-date", totals: { grandAmount: 999 } }
+    ];
+    var trend = getOrderTrendByMode(orders, { mode: "year", year: 2026 });
+
+    expect(trend.mode).toBe("year");
+    expect(trend.year).toBeNull();
+    expect(trend.bucketType).toBe("year");
+    expect(trend.points.map(function (point) { return point.key; })).toEqual(["2024", "2026"]);
+    expect(trend.points.map(function (point) { return point.count; })).toEqual([1, 2]);
+    expect(trend.points.map(function (point) { return point.amount; })).toEqual([20, 110]);
+    expect(trend.totalCount).toBe(3);
+    expect(trend.totalAmount).toBe(130);
+    expect(Number.isNaN(trend.maxAmount)).toBe(false);
+  });
+
+  it("filters orders by month, quarter, and year trend mode ranges", function () {
+    var orders = [
+      makeOrder("a", "2026-05-26", 100),
+      makeOrder("b", "2026-01-15", 40),
+      makeOrder("june", "2026-06-08", 60),
+      makeOrder("c", "2025-06-01", 20),
+      { id: "invalid", orderDate: "missing-date", totals: { grandAmount: 30 } }
+    ];
+
+    expect(getOrdersInTrendModeRange(orders, { mode: "month", year: 2026 }).map(function (order) { return order.id; })).toEqual(["a", "b", "june"]);
+    expect(getOrdersInTrendModeRange(orders, { mode: "month", year: 2026, month: 6 }).map(function (order) { return order.id; })).toEqual(["june"]);
+    expect(getOrdersInTrendModeRange(orders, { mode: "month", year: 2026, month: 99 }).map(function (order) { return order.id; })).toEqual(["a", "b", "june"]);
+    expect(getOrdersInTrendModeRange(orders, { mode: "quarter", year: 2026, month: 6 }).map(function (order) { return order.id; })).toEqual(["a", "b", "june"]);
+    expect(getOrdersInTrendModeRange(orders, { mode: "year", year: 2026, month: 6 }).map(function (order) { return order.id; })).toEqual(["a", "b", "june", "c"]);
+  });
+
   it("builds order pie data from safe amount parts", function () {
     var orders = [
       makeOrder("a", "2026-05-26", 100),
@@ -253,19 +332,19 @@ describe("order service", function () {
     ]);
   });
 
-  it("classifies main tile rows only when saved fields clearly identify the segment", function () {
-    expect(classifyMainTileRow({ lengthsText: "0.218" })).toBe("red-wave");
+  it("classifies main tile rows only when saved segment fields clearly identify the brand", function () {
+    expect(classifyMainTileRow({ lengthsText: "0.218" })).toBe("unknown");
     expect(classifyMainTileRow({ segmentLength: 0.219 })).toBe("xingda");
     expect(classifyMainTileRow({ tileSegmentLength: 0.218 })).toBe("red-wave");
     expect(classifyMainTileRow({ mainTileSegmentLength: 0.219 })).toBe("xingda");
     expect(classifyMainTileRow({ segmentLength: 0.217, spec: "红波 0.218" })).toBe("unknown");
-    expect(classifyMainTileRow({ spec: "红波 0.218" })).toBe("red-wave");
-    expect(classifyMainTileRow({ model: "星大 0.219" })).toBe("xingda");
+    expect(classifyMainTileRow({ spec: "红波 0.218" })).toBe("unknown");
+    expect(classifyMainTileRow({ model: "星大 0.219" })).toBe("unknown");
     expect(classifyMainTileRow({ lengthsText: "2.500" })).toBe("unknown");
     expect(classifyMainTileRow({ remark: "0.218 / 0.219 混合" })).toBe("unknown");
   });
 
-  it("builds tile-only pie data split by red wave, xingda, and unknown tiles", function () {
+  it("builds tile pie brand data split by red wave, xingda, and unknown tiles", function () {
     var splitByArea = buildOrderPieData([
       Object.assign({}, makeOrder("a", "2026-05-26", 0), {
         totals: {
@@ -276,7 +355,7 @@ describe("order service", function () {
         },
         items: {
           mainRows: [
-            { lengthsText: "0.218", area: 6 },
+            { segmentLength: 0.218, area: 6 },
             { segmentLength: 0.219, area: 4 },
             { lengthsText: "2.500", area: 2 }
           ],
@@ -295,8 +374,8 @@ describe("order service", function () {
         },
         items: {
           mainRows: [
-            { lengthsText: "0.218", amount: 70 },
-            { lengthsText: "0.219", subtotal: 30 }
+            { segmentLength: 0.218, amount: 70 },
+            { segmentLength: 0.219, subtotal: 30 }
           ],
           otherTiles: []
         }
@@ -333,6 +412,138 @@ describe("order service", function () {
       { key: "xingda", label: "星大", value: 90 }
     ]);
     expect(buildOrderPieData([], "overview").slices).toEqual([]);
+  });
+
+  it("builds tile pie color data from the order tile color", function () {
+    var colorPie = buildOrderPieData([
+      Object.assign({}, makeOrder("a", "2026-05-26", 0), {
+        tileColor: "枣红",
+        totals: {
+          mainAmount: 100,
+          otherTileAmount: 10,
+          accessoryAmount: 0,
+          steelAmount: 0
+        },
+        items: {
+          mainRows: [{ segmentLength: 0.218, area: 10 }],
+          otherTiles: [{ subtotal: 10 }]
+        }
+      }),
+      Object.assign({}, makeOrder("b", "2026-05-27", 0), {
+        tileColor: "灰色",
+        totals: {
+          mainAmount: 40,
+          otherTileAmount: 0,
+          accessoryAmount: 0,
+          steelAmount: 0
+        },
+        items: {
+          mainRows: [{ segmentLength: 0.219, area: 4 }],
+          otherTiles: []
+        }
+      }),
+      Object.assign({}, makeOrder("c", "2026-05-28", 0), {
+        tileColor: "",
+        totals: {
+          mainAmount: 30,
+          otherTileAmount: 0,
+          accessoryAmount: 0,
+          steelAmount: 0
+        },
+        items: {
+          mainRows: [{ area: 3 }],
+          otherTiles: []
+        }
+      })
+    ], "tile", { tileView: "color" });
+
+    expect(colorPie.tileView).toBe("color");
+    expect(colorPie.slices).toEqual([
+      { key: "jujube-red", label: "枣红", value: 110 },
+      { key: "gray", label: "灰色", value: 40 },
+      { key: "unknown-color", label: "未区分", value: 30 }
+    ]);
+  });
+
+  it("builds tile pie combo data from saved brand and order color", function () {
+    var comboPie = buildOrderPieData([
+      Object.assign({}, makeOrder("a", "2026-05-26", 0), {
+        tileColor: "枣红",
+        totals: {
+          mainAmount: 100,
+          otherTileAmount: 0,
+          accessoryAmount: 0,
+          steelAmount: 0
+        },
+        items: {
+          mainRows: [
+            { segmentLength: 0.218, amount: 60 },
+            { segmentLength: 0.219, amount: 40 }
+          ],
+          otherTiles: []
+        }
+      }),
+      Object.assign({}, makeOrder("b", "2026-05-27", 0), {
+        tileColor: "灰色",
+        totals: {
+          mainAmount: 70,
+          otherTileAmount: 0,
+          accessoryAmount: 0,
+          steelAmount: 0
+        },
+        items: {
+          mainRows: [
+            { segmentLength: 0.219, amount: 70 }
+          ],
+          otherTiles: []
+        }
+      }),
+      Object.assign({}, makeOrder("c", "2026-05-28", 0), {
+        tileColor: "砖红",
+        totals: {
+          mainAmount: 30,
+          otherTileAmount: 0,
+          accessoryAmount: 0,
+          steelAmount: 0
+        },
+        items: {
+          mainRows: [{ area: 3 }],
+          otherTiles: []
+        }
+      })
+    ], "tile", { tileView: "combo" });
+
+    expect(comboPie.tileView).toBe("combo");
+    expect(comboPie.slices).toEqual([
+      { key: "red-wave-jujube-red", label: "红波-枣红", value: 60 },
+      { key: "xingda-jujube-red", label: "星大-枣红", value: 40 },
+      { key: "xingda-gray", label: "星大-灰色", value: 70 },
+      { key: "unknown-tile-brick-red", label: "未区分-砖红", value: 30 }
+    ]);
+  });
+
+  it("keeps overview pie data unchanged and avoids NaN values", function () {
+    var overview = buildOrderPieData([
+      Object.assign({}, makeOrder("nan", "2026-05-29", 0), {
+        totals: {
+          mainAmount: Number.NaN,
+          otherTileAmount: undefined,
+          accessoryAmount: 5,
+          steelAmount: "bad"
+        },
+        items: {
+          mainRows: [{ segmentLength: 0.218, amount: Number.NaN }],
+          otherTiles: [{ subtotal: 8 }]
+        }
+      })
+    ], "overview");
+    expect(overview.slices).toEqual([
+      { key: "tile", label: "瓦片", value: 8 },
+      { key: "accessory", label: "配件", value: 5 }
+    ]);
+    overview.slices.forEach(function (slice) {
+      expect(Number.isNaN(slice.value)).toBe(false);
+    });
   });
 
   it("merges imported orders by id", function () {

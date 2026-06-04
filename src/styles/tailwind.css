@@ -807,6 +807,10 @@
     @apply text-[0.74rem] font-extrabold text-app-muted;
   }
 
+  .trend-controls {
+    @apply grid min-w-0 grid-cols-1 gap-2 md:grid-cols-[auto_auto] md:items-center;
+  }
+
   .range-switch {
     @apply grid grid-cols-3 gap-1 rounded-xl border border-app-line bg-app-surface-soft p-1;
   }
@@ -820,6 +824,38 @@
   }
 
   .range-btn.active {
+    @apply bg-white text-app-primary shadow-app-soft;
+  }
+
+  .trend-year-control {
+    @apply grid grid-cols-[32px_minmax(58px,1fr)_32px] items-center gap-1 rounded-xl border border-app-line bg-app-surface-soft p-1 transition duration-200 ease-app-out motion-reduce:transition-none;
+  }
+
+  .trend-year-control.is-disabled {
+    @apply opacity-55;
+  }
+
+  .trend-year-btn {
+    @apply inline-flex size-8 items-center justify-center rounded-[10px] border border-transparent bg-white text-[1rem] font-black leading-none text-app-text transition duration-200 ease-app-out hover:border-app-primary hover:text-app-primary disabled:pointer-events-none disabled:bg-transparent disabled:text-app-muted motion-reduce:transition-none;
+  }
+
+  .trend-year-value {
+    @apply min-w-0 text-center font-mono text-[0.84rem] font-black text-app-text;
+  }
+
+  .trend-month-control {
+    @apply col-span-full grid min-w-0 grid-cols-6 gap-1 rounded-xl border border-app-line bg-app-surface-soft p-1 md:grid-cols-12;
+  }
+
+  .trend-month-control[hidden] {
+    display: none;
+  }
+
+  .trend-month-btn {
+    @apply min-h-7 min-w-0 rounded-[9px] px-1.5 py-1 text-[0.72rem] font-black text-app-muted transition duration-200 ease-app-out hover:bg-white hover:text-app-text motion-reduce:transition-none;
+  }
+
+  .trend-month-btn.active {
     @apply bg-white text-app-primary shadow-app-soft;
   }
 
@@ -877,6 +913,22 @@
 
   .trend-pie-toggle.active {
     @apply border-app-primary bg-app-primary text-white;
+  }
+
+  .trend-tile-pie-controls {
+    @apply mb-2 flex min-w-0 flex-wrap gap-1.5;
+  }
+
+  .trend-tile-pie-controls[hidden] {
+    display: none;
+  }
+
+  .trend-tile-pie-btn {
+    @apply inline-flex h-7 min-w-0 items-center justify-center rounded-[10px] border border-app-line bg-app-surface-soft px-2.5 text-[0.72rem] font-black text-app-muted transition duration-200 ease-app-out hover:border-app-primary hover:bg-white hover:text-app-primary;
+  }
+
+  .trend-tile-pie-btn.active {
+    @apply border-app-primary bg-white text-app-primary shadow-sm;
   }
 
   .trend-pie-body {

@@ -25,6 +25,8 @@ import {
   getDateOnly,
   getOrderStats,
   getOrderTrend,
+  getOrderTrendByMode,
+  getOrdersInTrendModeRange,
   getOrdersInTrendRange,
   loadOrders,
   loadOrdersWithApiFallback,
@@ -71,7 +73,13 @@ var totalOrderCount = document.getElementById("totalOrderCount");
 var totalOrderAmount = document.getElementById("totalOrderAmount");
 var totalOrderArea = document.getElementById("totalOrderArea");
 var trendSubtitle = document.getElementById("trendSubtitle");
-var trendRangeButtons = Array.prototype.slice.call(document.querySelectorAll("[data-trend-range]"));
+var trendModeButtons = Array.prototype.slice.call(document.querySelectorAll("[data-trend-mode]"));
+var trendYearControl = document.getElementById("trendYearControl");
+var trendYearValue = document.getElementById("trendYearValue");
+var trendPrevYear = document.getElementById("trendPrevYear");
+var trendNextYear = document.getElementById("trendNextYear");
+var trendMonthControl = document.getElementById("trendMonthControl");
+var trendMonthButtons = Array.prototype.slice.call(document.querySelectorAll("[data-trend-month]"));
 var trendOrderList = document.getElementById("trendOrderList");
 var trendOrderEmpty = document.getElementById("trendOrderEmpty");
 var orderTrendChart = document.getElementById("orderTrendChart");
@@ -82,6 +90,8 @@ var orderPieLegend = document.getElementById("orderPieLegend");
 var orderPieEmpty = document.getElementById("orderPieEmpty");
 var trendPieSubtitle = document.getElementById("trendPieSubtitle");
 var trendPieTileToggle = document.getElementById("trendPieTileToggle");
+var trendTilePieViewControls = document.getElementById("trendTilePieViewControls");
+var trendTilePieViewButtons = Array.prototype.slice.call(document.querySelectorAll("[data-trend-tile-pie-view]"));
 var orderLocationMap = document.getElementById("orderLocationMap");
 var orderMapSubtitle = document.getElementById("orderMapSubtitle");
 var orderMapStatus = document.getElementById("orderMapStatus");
@@ -108,8 +118,11 @@ var recordDetailSubtitle = document.getElementById("recordDetailSubtitle");
 var recordDetailBody = document.getElementById("recordDetailBody");
 var closeRecordDetail = document.getElementById("closeRecordDetail");
 
-var activeTrendRange = "7d";
+var activeTrendMode = "month";
+var activeTrendYear = new Date().getFullYear();
+var activeTrendMonth = new Date().getMonth() + 1;
 var activeTrendPieMode = "overview";
+var activeTrendTilePieView = "brand";
 var activeDashboardMonth = getMonthKey(new Date());
 var activeTrendPointKey = "";
 var trendPointDetailsByKey = {};
@@ -186,6 +199,45 @@ function getTrendRangeLabel(range) {
   return "最近 7 天";
 }
 
+function getTrendModeLabel(mode) {
+  if (mode === "quarter") return "季度";
+  if (mode === "year") return "年度";
+  return "月度";
+}
+
+function getTrendScopeLabel(mode, year) {
+  if (mode === "year") return "全部年份";
+  return String(year) + " 年" + getTrendModeLabel(mode);
+}
+
+function normalizeTrendMonthValue(value, fallback) {
+  var number = Number(value);
+  if (Number.isFinite(number)) {
+    number = Math.trunc(number);
+    if (number >= 1 && number <= 12) return number;
+  }
+  var fallbackNumber = Number(fallback);
+  if (Number.isFinite(fallbackNumber)) {
+    fallbackNumber = Math.trunc(fallbackNumber);
+    if (fallbackNumber >= 1 && fallbackNumber <= 12) return fallbackNumber;
+  }
+  return new Date().getMonth() + 1;
+}
+
+function getTrendMonthFromKey(key) {
+  var match = /^(\d{4})-(\d{2})$/.exec(String(key || ""));
+  if (!match) return null;
+  var month = Number(match[2]);
+  return month >= 1 && month <= 12 ? month : null;
+}
+
+function getTrendRangeSubtitle(mode, year, month) {
+  if (mode === "month") {
+    return "查看" + getTrendScopeLabel(mode, year) + "的订单数量和订单金额，当前范围：" + normalizeTrendMonthValue(month) + "月。";
+  }
+  return "查看" + getTrendScopeLabel(mode, year) + "的订单数量和订单金额。";
+}
+
 function getChartPoint(points, index, metric, bounds, maxValue) {
   var safeMax = maxValue > 0 ? maxValue : 1;
   var x = points.length <= 1 ? bounds.left + bounds.width / 2 : bounds.left + (bounds.width * index / (points.length - 1));
@@ -200,13 +252,19 @@ function polyline(points) {
 }
 
 function shouldShowTick(index, length, bucketType) {
-  if (bucketType === "month") return index % 2 === 0 || index === length - 1;
+  if (bucketType === "month" || bucketType === "quarter" || bucketType === "year") return true;
   if (length <= 7) return true;
   return index % 5 === 0 || index === length - 1;
 }
 
 function getTrendBucketKey(order, bucketType) {
   var orderDate = String(order && order.orderDate || "").trim();
+  if (bucketType === "year") return orderDate.slice(0, 4);
+  if (bucketType === "quarter") {
+    var month = Number(orderDate.slice(5, 7));
+    if (!Number.isFinite(month) || month < 1 || month > 12) return "";
+    return orderDate.slice(0, 4) + "-Q" + Math.ceil(month / 3);
+  }
   return bucketType === "month" ? orderDate.slice(0, 7) : orderDate;
 }
 
@@ -357,9 +415,15 @@ function renderPieLegend(data) {
   }).join("");
 }
 
+function getTilePieSubtitle(view) {
+  if (view === "color") return "按订单瓦片颜色统计金额占比";
+  if (view === "combo") return "按品牌与颜色组合统计金额占比";
+  return "按主瓦节长区分红波、星大与未区分";
+}
+
 function renderTrendPie(orders) {
   if (!orderPieChart || !orderPieLegend) return;
-  var data = buildOrderPieData(orders, activeTrendPieMode);
+  var data = buildOrderPieData(orders, activeTrendPieMode, { tileView: activeTrendTilePieView });
   var hasData = data.total > 0 && data.slices.length > 0;
   if (trendPieTileToggle) {
     var tileOnly = activeTrendPieMode === "tile";
@@ -367,8 +431,14 @@ function renderTrendPie(orders) {
     trendPieTileToggle.setAttribute("aria-pressed", tileOnly ? "true" : "false");
     trendPieTileToggle.setAttribute("title", tileOnly ? "显示瓦片、配件、钢铁材料总览" : "只显示瓦片数据");
   }
+  if (trendTilePieViewControls) trendTilePieViewControls.hidden = activeTrendPieMode !== "tile";
+  trendTilePieViewButtons.forEach(function (button) {
+    button.classList.toggle("active", button.getAttribute("data-trend-tile-pie-view") === activeTrendTilePieView);
+  });
   if (trendPieSubtitle) {
-    trendPieSubtitle.textContent = activeTrendPieMode === "tile" ? "只看主瓦与其他瓦片金额" : "瓦片、配件、钢铁材料金额占比";
+    trendPieSubtitle.textContent = activeTrendPieMode === "tile" ?
+      getTilePieSubtitle(activeTrendTilePieView) :
+      "瓦片、配件、钢铁材料金额占比";
   }
   setEmptyNote(orderPieEmpty, !hasData);
   orderPieChart.classList.toggle("is-muted", !hasData);
@@ -383,13 +453,34 @@ function renderTrendPie(orders) {
 }
 
 function renderTrend(orders) {
-  var trend = getOrderTrend(orders, activeTrendRange, new Date());
-  var trendOrders = getOrdersInTrendRange(orders, activeTrendRange, new Date());
-  var ordersByKey = getTrendOrdersByKey(trendOrders, trend);
+  activeTrendMonth = normalizeTrendMonthValue(activeTrendMonth);
+  var trendOptions = { mode: activeTrendMode, year: activeTrendYear };
+  var rangeOptions = activeTrendMode === "month" ?
+    { mode: activeTrendMode, year: activeTrendYear, month: activeTrendMonth } :
+    trendOptions;
+  var trend = getOrderTrendByMode(orders, trendOptions);
+  var chartOrders = getOrdersInTrendModeRange(orders, trendOptions);
+  var trendOrders = getOrdersInTrendModeRange(orders, rangeOptions);
+  var ordersByKey = getTrendOrdersByKey(chartOrders, trend);
   var hasData = trend.totalCount > 0 || trend.totalAmount > 0;
-  trendSubtitle.textContent = "查看" + getTrendRangeLabel(activeTrendRange) + "的订单数量和订单金额。";
-  trendRangeButtons.forEach(function (button) {
-    button.classList.toggle("active", button.getAttribute("data-trend-range") === activeTrendRange);
+  if (trendSubtitle) {
+    trendSubtitle.textContent = getTrendRangeSubtitle(activeTrendMode, activeTrendYear, activeTrendMonth);
+  }
+  trendModeButtons.forEach(function (button) {
+    button.classList.toggle("active", button.getAttribute("data-trend-mode") === activeTrendMode);
+  });
+  if (trendYearValue) trendYearValue.textContent = String(activeTrendYear);
+  if (trendYearControl) trendYearControl.classList.toggle("is-disabled", activeTrendMode === "year");
+  [trendPrevYear, trendNextYear].forEach(function (button) {
+    if (!button) return;
+    button.disabled = activeTrendMode === "year";
+  });
+  if (trendMonthControl) trendMonthControl.hidden = activeTrendMode !== "month";
+  trendMonthButtons.forEach(function (button) {
+    var month = normalizeTrendMonthValue(button.getAttribute("data-trend-month"));
+    var active = activeTrendMode === "month" && month === activeTrendMonth;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
   });
   trendPointDetailsByKey = {};
   trend.points.forEach(function (point) {
@@ -405,6 +496,19 @@ function renderTrend(orders) {
   renderTrendPointDetail(activeTrendPointKey);
   setEmptyNote(trendEmpty, !hasData);
   orderTrendChart.classList.toggle("is-muted", !hasData);
+}
+
+function activateTrendChartPoint(key) {
+  activeTrendPointKey = key || "";
+  if (activeTrendMode === "month") {
+    var month = getTrendMonthFromKey(activeTrendPointKey);
+    if (month) {
+      activeTrendMonth = month;
+      renderTrend(loadOrders());
+      return;
+    }
+  }
+  renderTrendPointDetail(activeTrendPointKey);
 }
 
 function getOrderTitle(order) {
@@ -1719,27 +1823,63 @@ if (dashboardNextMonth) {
   });
 }
 
-trendRangeButtons.forEach(function (button) {
+trendModeButtons.forEach(function (button) {
   button.addEventListener("click", function () {
-    activeTrendRange = button.getAttribute("data-trend-range") || "7d";
+    activeTrendMode = button.getAttribute("data-trend-mode") || "month";
     hideTrendPointDetail();
     renderDashboard();
   });
 });
 
+trendMonthButtons.forEach(function (button) {
+  button.addEventListener("click", function () {
+    activeTrendMonth = normalizeTrendMonthValue(button.getAttribute("data-trend-month"), activeTrendMonth);
+    hideTrendPointDetail();
+    renderDashboard();
+  });
+});
+
+if (trendPrevYear) {
+  trendPrevYear.addEventListener("click", function () {
+    activeTrendYear -= 1;
+    hideTrendPointDetail();
+    renderDashboard();
+  });
+}
+
+if (trendNextYear) {
+  trendNextYear.addEventListener("click", function () {
+    activeTrendYear += 1;
+    hideTrendPointDetail();
+    renderDashboard();
+  });
+}
+
 if (trendPieTileToggle) {
   trendPieTileToggle.addEventListener("click", function () {
-    activeTrendPieMode = activeTrendPieMode === "tile" ? "overview" : "tile";
+    if (activeTrendPieMode === "tile") {
+      activeTrendPieMode = "overview";
+    } else {
+      activeTrendPieMode = "tile";
+      activeTrendTilePieView = "brand";
+    }
     renderTrend(loadOrders());
   });
 }
+
+trendTilePieViewButtons.forEach(function (button) {
+  button.addEventListener("click", function () {
+    activeTrendTilePieView = button.getAttribute("data-trend-tile-pie-view") || "brand";
+    activeTrendPieMode = "tile";
+    renderTrend(loadOrders());
+  });
+});
 
 if (orderTrendChart) {
   orderTrendChart.addEventListener("click", function (event) {
     var point = event.target.closest("[data-trend-key]");
     if (!point) return;
-    activeTrendPointKey = point.getAttribute("data-trend-key") || "";
-    renderTrendPointDetail(activeTrendPointKey);
+    activateTrendChartPoint(point.getAttribute("data-trend-key") || "");
   });
 
   orderTrendChart.addEventListener("keydown", function (event) {
@@ -1747,8 +1887,7 @@ if (orderTrendChart) {
     var point = event.target.closest("[data-trend-key]");
     if (!point) return;
     event.preventDefault();
-    activeTrendPointKey = point.getAttribute("data-trend-key") || "";
-    renderTrendPointDetail(activeTrendPointKey);
+    activateTrendChartPoint(point.getAttribute("data-trend-key") || "");
   });
 }
 

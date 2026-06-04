@@ -733,12 +733,82 @@ function collectMainTileRowSignals(row) {
 }
 
 export function classifyMainTileRow(row) {
-  var priorityClassification = getPrioritySegmentLengthClassification(row);
-  if (priorityClassification) return priorityClassification;
-  var signals = collectMainTileRowSignals(row);
-  if (signals.redWave && !signals.xingda) return "red-wave";
-  if (signals.xingda && !signals.redWave) return "xingda";
-  return "unknown";
+  return getPrioritySegmentLengthClassification(row) || "unknown";
+}
+
+var TILE_BRAND_DEFINITIONS = [
+  { key: "red-wave", label: "红波" },
+  { key: "xingda", label: "星大" },
+  { key: "unknown-tile", label: "未区分" }
+];
+
+var TILE_COLOR_DEFINITIONS = [
+  { key: "jujube-red", label: "枣红" },
+  { key: "brick-red", label: "砖红" },
+  { key: "gray", label: "灰色" },
+  { key: "unknown-color", label: "未区分" }
+];
+
+function classifyTileColor(value) {
+  var text = compactText(value);
+  if (text === "枣红") return "jujube-red";
+  if (text === "砖红") return "brick-red";
+  if (text === "灰色") return "gray";
+  return "unknown-color";
+}
+
+function getTilePieView(options) {
+  var view = typeof options === "string" ? options : options && options.tileView;
+  return view === "color" || view === "combo" ? view : "brand";
+}
+
+function createSliceTotals(definitions) {
+  return definitions.reduce(function (totals, item) {
+    totals[item.key] = 0;
+    return totals;
+  }, {});
+}
+
+function addSliceTotal(totals, key, amount) {
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  totals[key] = (Number.isFinite(totals[key]) ? totals[key] : 0) + amount;
+}
+
+function slicesFromDefinitions(definitions, totals) {
+  return definitions.map(function (item) {
+    return {
+      key: item.key,
+      label: item.label,
+      value: totals[item.key]
+    };
+  });
+}
+
+function getTileBreakdownBrandEntries(tileBreakdown) {
+  return [
+    { key: "red-wave", value: tileBreakdown.redWaveAmount },
+    { key: "xingda", value: tileBreakdown.xingdaAmount },
+    { key: "unknown-tile", value: tileBreakdown.unknownTileAmount }
+  ];
+}
+
+function getTileComboKey(brandKey, colorKey) {
+  return brandKey + "-" + colorKey;
+}
+
+function buildComboSlices(totals) {
+  var slices = [];
+  TILE_BRAND_DEFINITIONS.forEach(function (brand) {
+    TILE_COLOR_DEFINITIONS.forEach(function (color) {
+      var key = getTileComboKey(brand.key, color.key);
+      slices.push({
+        key: key,
+        label: brand.label + "-" + color.label,
+        value: totals[key]
+      });
+    });
+  });
+  return slices;
 }
 
 function addTileBreakdownAmount(result, classification, amount) {
@@ -824,10 +894,15 @@ export function getOrderAmountParts(order) {
   };
 }
 
-export function buildOrderPieData(orders, mode) {
+export function buildOrderPieData(orders, mode, options) {
   var tileOnly = mode === "tile";
+  var tileView = getTilePieView(options);
+  var tileBrandTotals = createSliceTotals(TILE_BRAND_DEFINITIONS);
+  var tileColorTotals = createSliceTotals(TILE_COLOR_DEFINITIONS);
+  var tileComboTotals = {};
   var totals = (Array.isArray(orders) ? orders : []).reduce(function (result, order) {
     var parts = getOrderAmountParts(order);
+    var colorKey = classifyTileColor(order && order.tileColor);
     result.mainTileAmount += parts.mainTileAmount;
     result.otherTileAmount += parts.otherTileAmount;
     result.tileAmount += parts.tileAmount;
@@ -837,6 +912,11 @@ export function buildOrderPieData(orders, mode) {
     result.redWaveAmount += tileBreakdown.redWaveAmount;
     result.xingdaAmount += tileBreakdown.xingdaAmount;
     result.unknownTileAmount += tileBreakdown.unknownTileAmount;
+    getTileBreakdownBrandEntries(tileBreakdown).forEach(function (entry) {
+      addSliceTotal(tileBrandTotals, entry.key, entry.value);
+      addSliceTotal(tileComboTotals, getTileComboKey(entry.key, colorKey), entry.value);
+    });
+    addSliceTotal(tileColorTotals, colorKey, parts.tileAmount);
     return result;
   }, {
     mainTileAmount: 0,
@@ -849,15 +929,18 @@ export function buildOrderPieData(orders, mode) {
     unknownTileAmount: 0
   });
 
-  var slices = tileOnly ? [
-    { key: "red-wave", label: "红波", value: totals.redWaveAmount },
-    { key: "xingda", label: "星大", value: totals.xingdaAmount },
-    { key: "unknown-tile", label: "未区分", value: totals.unknownTileAmount }
-  ] : [
+  var slices = [
     { key: "tile", label: "瓦片", value: totals.tileAmount },
     { key: "accessory", label: "配件", value: totals.accessoryAmount },
     { key: "steel", label: "钢铁材料", value: totals.steelAmount }
   ];
+  if (tileOnly && tileView === "color") {
+    slices = slicesFromDefinitions(TILE_COLOR_DEFINITIONS, tileColorTotals);
+  } else if (tileOnly && tileView === "combo") {
+    slices = buildComboSlices(tileComboTotals);
+  } else if (tileOnly) {
+    slices = slicesFromDefinitions(TILE_BRAND_DEFINITIONS, tileBrandTotals);
+  }
 
   slices = slices.filter(function (slice) {
     return Number.isFinite(slice.value) && slice.value > 0;
@@ -865,9 +948,150 @@ export function buildOrderPieData(orders, mode) {
 
   return {
     mode: tileOnly ? "tile" : "overview",
+    tileView: tileOnly ? tileView : "",
     total: sumFiniteAmounts(slices.map(function (slice) { return slice.value; })),
     slices: slices
   };
+}
+
+function getTrendAmount(order) {
+  return finiteNumber(order && order.totals && order.totals.grandAmount, 0);
+}
+
+function getOrderDateParts(order) {
+  var text = compactText(order && order.orderDate);
+  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  var year = Number(match[1]);
+  var month = Number(match[2]);
+  var day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return {
+    year: year,
+    month: month,
+    day: day,
+    key: text
+  };
+}
+
+function normalizeTrendMode(mode) {
+  if (mode === "quarter" || mode === "year") return mode;
+  return "month";
+}
+
+function normalizeTrendYear(year, baseDate) {
+  var number = Number(year);
+  if (Number.isFinite(number) && number >= 1900 && number <= 9999) return Math.trunc(number);
+  var date = baseDate instanceof Date ? baseDate : new Date(baseDate || Date.now());
+  if (Number.isNaN(date.getTime())) date = new Date();
+  return date.getFullYear();
+}
+
+function normalizeTrendMonth(month) {
+  if (month === "" || month === null || month === undefined) return null;
+  var number = Number(month);
+  if (!Number.isFinite(number)) return null;
+  number = Math.trunc(number);
+  return number >= 1 && number <= 12 ? number : null;
+}
+
+function createTrendPoint(key, label) {
+  return {
+    key: key,
+    label: label,
+    count: 0,
+    ordersCount: 0,
+    amount: 0,
+    value: 0
+  };
+}
+
+function addOrderToTrendPoint(point, order) {
+  var amount = getTrendAmount(order);
+  point.count += 1;
+  point.ordersCount = point.count;
+  point.amount += amount;
+  point.value = point.amount;
+}
+
+function finishTrendResult(mode, year, bucketType, points) {
+  return {
+    mode: mode,
+    year: year,
+    bucketType: bucketType,
+    points: points,
+    totalCount: sumFiniteAmounts(points.map(function (point) { return point.count; })),
+    totalAmount: sumFiniteAmounts(points.map(function (point) { return point.amount; })),
+    maxCount: Math.max(0, Math.max.apply(null, points.map(function (point) { return point.count; }))),
+    maxAmount: Math.max(0, Math.max.apply(null, points.map(function (point) { return point.amount; })))
+  };
+}
+
+export function getOrderTrendByMode(orders, options) {
+  var settings = options || {};
+  var mode = normalizeTrendMode(settings.mode);
+  var year = normalizeTrendYear(settings.year, settings.baseDate);
+  var list = Array.isArray(orders) ? orders : [];
+  var points = [];
+  var byKey = {};
+
+  if (mode === "year") {
+    list.forEach(function (order) {
+      var parts = getOrderDateParts(order);
+      if (!parts) return;
+      var yearKey = String(parts.year);
+      if (!byKey[yearKey]) {
+        byKey[yearKey] = createTrendPoint(yearKey, yearKey);
+      }
+      addOrderToTrendPoint(byKey[yearKey], order);
+    });
+    points = Object.keys(byKey).sort().map(function (key) { return byKey[key]; });
+    return finishTrendResult(mode, null, "year", points);
+  }
+
+  if (mode === "quarter") {
+    for (var quarter = 1; quarter <= 4; quarter += 1) {
+      var quarterKey = year + "-Q" + quarter;
+      byKey[quarterKey] = createTrendPoint(quarterKey, "Q" + quarter);
+      points.push(byKey[quarterKey]);
+    }
+    list.forEach(function (order) {
+      var parts = getOrderDateParts(order);
+      if (!parts || parts.year !== year) return;
+      var key = year + "-Q" + Math.ceil(parts.month / 3);
+      addOrderToTrendPoint(byKey[key], order);
+    });
+    return finishTrendResult(mode, year, "quarter", points);
+  }
+
+  for (var month = 1; month <= 12; month += 1) {
+    var monthKey = year + "-" + String(month).padStart(2, "0");
+    byKey[monthKey] = createTrendPoint(monthKey, String(month) + "月");
+    points.push(byKey[monthKey]);
+  }
+  list.forEach(function (order) {
+    var parts = getOrderDateParts(order);
+    if (!parts || parts.year !== year) return;
+    var key = year + "-" + String(parts.month).padStart(2, "0");
+    addOrderToTrendPoint(byKey[key], order);
+  });
+  return finishTrendResult(mode, year, "month", points);
+}
+
+export function getOrdersInTrendModeRange(orders, options) {
+  var settings = options || {};
+  var mode = normalizeTrendMode(settings.mode);
+  var year = normalizeTrendYear(settings.year, settings.baseDate);
+  var month = mode === "month" ? normalizeTrendMonth(settings.month) : null;
+  return (Array.isArray(orders) ? orders : []).filter(function (order) {
+    var parts = getOrderDateParts(order);
+    if (!parts) return false;
+    if (mode === "year") return true;
+    if (parts.year !== year) return false;
+    if (mode === "month" && month) return parts.month === month;
+    return true;
+  });
 }
 
 export function getOrderTrend(orders, rangeKey, baseDate) {

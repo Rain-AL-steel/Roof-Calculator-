@@ -222,12 +222,33 @@
         <div class="section-head compact">
           <div>
             <h2>订单趋势</h2>
-            <p class="subtext" id="trendSubtitle">查看最近 7 天的订单数量和订单金额。</p>
+            <p class="subtext" id="trendSubtitle">查看当前年份月度订单数量和订单金额。</p>
           </div>
-          <div class="range-switch" role="tablist" aria-label="趋势时间范围">
-            <button type="button" class="range-btn active" data-trend-range="7d">7天</button>
-            <button type="button" class="range-btn" data-trend-range="30d">30天</button>
-            <button type="button" class="range-btn" data-trend-range="1y">一年</button>
+          <div class="trend-controls" aria-label="趋势时间范围">
+            <div class="range-switch" role="tablist" aria-label="趋势模式">
+              <button type="button" class="range-btn active" data-trend-mode="month">月</button>
+              <button type="button" class="range-btn" data-trend-mode="quarter">季</button>
+              <button type="button" class="range-btn" data-trend-mode="year">年</button>
+            </div>
+            <div class="trend-year-control" id="trendYearControl" aria-label="趋势年份">
+              <button type="button" class="trend-year-btn" id="trendPrevYear" aria-label="上一年">‹</button>
+              <span class="trend-year-value" id="trendYearValue">2026</span>
+              <button type="button" class="trend-year-btn" id="trendNextYear" aria-label="下一年">›</button>
+            </div>
+            <div class="trend-month-control" id="trendMonthControl" aria-label="趋势月份">
+              <button type="button" class="trend-month-btn" data-trend-month="1">1月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="2">2月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="3">3月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="4">4月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="5">5月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="6">6月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="7">7月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="8">8月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="9">9月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="10">10月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="11">11月</button>
+              <button type="button" class="trend-month-btn" data-trend-month="12">12月</button>
+            </div>
           </div>
         </div>
         <div class="trend-body">
@@ -255,6 +276,11 @@
                   <p id="trendPieSubtitle">瓦片、配件、钢铁材料占比</p>
                 </div>
                 <button type="button" class="trend-pie-toggle" id="trendPieTileToggle" aria-pressed="false" title="只显示瓦片数据">瓦</button>
+              </div>
+              <div class="trend-tile-pie-controls" id="trendTilePieViewControls" aria-label="瓦片统计维度" hidden>
+                <button type="button" class="trend-tile-pie-btn active" data-trend-tile-pie-view="brand">品牌</button>
+                <button type="button" class="trend-tile-pie-btn" data-trend-tile-pie-view="color">颜色</button>
+                <button type="button" class="trend-tile-pie-btn" data-trend-tile-pie-view="combo">组合</button>
               </div>
               <div class="trend-pie-body">
                 <svg id="orderPieChart" class="trend-pie-chart" viewBox="0 0 160 160" role="img" aria-label="订单分类金额饼图"></svg>
