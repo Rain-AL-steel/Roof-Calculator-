@@ -766,15 +766,15 @@
   }
 
   .trend-body {
-    @apply grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(190px,230px)_minmax(0,1fr)] lg:items-stretch;
+    @apply grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)] lg:items-stretch;
   }
 
   .trend-chart-column {
-    @apply grid min-w-0 gap-2.5;
+    @apply grid min-w-0 gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-stretch;
   }
 
   .trend-order-panel {
-    @apply grid min-h-0 rounded-app-lg border border-app-line bg-app-surface-soft p-2.5;
+    @apply grid min-h-0 min-w-0 rounded-app-lg border border-app-line bg-app-surface-soft p-2.5;
   }
 
   .trend-order-head {
@@ -844,15 +844,106 @@
   }
 
   .trend-chart-wrap {
-    @apply relative min-h-[206px] overflow-hidden rounded-app-lg border border-app-line bg-white p-1.5;
+    @apply relative min-h-[280px] min-w-0 overflow-hidden rounded-app-lg border border-app-line bg-white p-1.5;
   }
 
   .trend-chart {
-    @apply block h-[196px] min-w-0 w-full;
+    @apply block h-[260px] min-w-0 w-full max-w-full;
   }
 
   .trend-chart.is-muted {
     @apply opacity-40;
+  }
+
+  .trend-pie-card {
+    @apply relative min-h-[280px] min-w-0 overflow-hidden rounded-app-lg border border-app-line bg-white p-3;
+  }
+
+  .trend-pie-head {
+    @apply mb-2.5 flex items-center justify-between gap-3;
+  }
+
+  .trend-pie-head h3 {
+    @apply m-0 text-[0.88rem] font-black text-app-text;
+  }
+
+  .trend-pie-head p {
+    @apply m-0 mt-0.5 text-[0.74rem] font-extrabold text-app-muted;
+  }
+
+  .trend-pie-toggle {
+    @apply inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] border border-app-line-strong bg-app-surface-soft text-[0.9rem] font-black text-app-text transition duration-200 ease-app-out hover:border-app-primary hover:bg-white hover:text-app-primary;
+  }
+
+  .trend-pie-toggle.active {
+    @apply border-app-primary bg-app-primary text-white;
+  }
+
+  .trend-pie-body {
+    @apply grid min-w-0 items-center gap-3 md:grid-cols-[150px_minmax(0,1fr)] lg:grid-cols-1;
+  }
+
+  @media (min-width: 1360px) {
+    .trend-pie-body {
+      grid-template-columns: 150px minmax(0, 1fr);
+    }
+  }
+
+  .trend-pie-chart {
+    @apply mx-auto block size-[150px] max-w-full;
+  }
+
+  .trend-pie-chart.is-muted {
+    @apply opacity-40;
+  }
+
+  .pie-track {
+    @apply stroke-app-line;
+    stroke-width: 26;
+  }
+
+  .pie-slice {
+    transition: stroke-dashoffset 180ms ease, stroke-dasharray 180ms ease;
+  }
+
+  .pie-hole {
+    @apply fill-white;
+  }
+
+  .pie-total-label {
+    @apply fill-app-muted text-[0.68rem] font-black;
+  }
+
+  .pie-total-value {
+    @apply fill-app-text text-[0.78rem] font-black;
+  }
+
+  .trend-pie-legend {
+    @apply grid min-w-0 gap-1.5;
+  }
+
+  .trend-pie-legend-item {
+    @apply grid min-w-0 grid-cols-[10px_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-[10px] border border-app-line bg-app-surface-soft px-2.5 py-2 text-[0.76rem];
+  }
+
+  .trend-pie-legend-item i {
+    @apply block size-2.5 rounded-full;
+  }
+
+  .trend-pie-legend-item span {
+    @apply min-w-0 font-black text-app-text;
+  }
+
+  .trend-pie-legend-item strong {
+    @apply whitespace-nowrap font-black text-app-text;
+  }
+
+  .trend-pie-legend-item em {
+    @apply whitespace-nowrap not-italic font-black text-app-muted;
+  }
+
+  .trend-pie-empty {
+    @apply absolute inset-x-4 top-1/2 z-[4] -translate-y-1/2;
   }
 
   .chart-grid,
@@ -996,11 +1087,11 @@
   }
 
   .order-map-wrap {
-    @apply relative z-[1] min-h-[380px] overflow-visible rounded-app-lg border border-app-line bg-white md:min-h-[430px];
+    @apply relative z-[1] min-h-[580px] overflow-visible rounded-app-lg border border-app-line bg-white md:min-h-[800px];
   }
 
   .order-map {
-    @apply relative z-0 h-[380px] w-full rounded-app-lg md:h-[430px];
+    @apply relative z-0 h-[580px] w-full rounded-app-lg md:h-[800px];
   }
 
   .map-empty-state {
@@ -1121,7 +1212,7 @@
   }
 
   .history-filters {
-    @apply grid grid-cols-1 items-end gap-3 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)_auto];
+    @apply grid grid-cols-1 items-end gap-3 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_210px_auto];
   }
 
   .history-layout {
@@ -1162,6 +1253,10 @@
   .history-actions,
   .record-actions {
     @apply flex flex-wrap gap-2;
+  }
+
+  .history-location {
+    @apply min-w-[220px] text-app-muted;
   }
 
   .compact-btn {

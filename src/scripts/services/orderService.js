@@ -87,6 +87,12 @@ function finiteNumber(value, fallback) {
   return Number.isFinite(number) && number >= 0 ? number : fallback;
 }
 
+function optionalNonnegativeNumber(value) {
+  if (value === "" || value === null || value === undefined) return NaN;
+  var number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : NaN;
+}
+
 function finiteCoordinate(value) {
   var number = Number(value);
   return Number.isFinite(number) ? number : NaN;
@@ -113,14 +119,44 @@ function normalizeDeliveryLocation(location) {
 
 function normalizeMainRows(rows) {
   return (Array.isArray(rows) ? rows : []).map(function (row) {
-    return {
+    var next = {
       lengthsText: compactText(row && row.lengthsText),
       totalQty: finiteNumber(row && row.totalQty, 0),
       actual: finiteNumber(row && row.actual, 0),
       area: finiteNumber(row && row.area, 0)
     };
+    [
+      "name",
+      "spec",
+      "model",
+      "remark",
+      "title",
+      "segmentText",
+      "segmentLengthText"
+    ].forEach(function (field) {
+      var value = compactText(row && row[field]);
+      if (value) next[field] = value;
+    });
+    [
+      "segment",
+      "segmentLength",
+      "tileSegmentLength",
+      "mainTileSegmentLength",
+      "defaultSegmentLength",
+      "tileSegment",
+      "amount",
+      "subtotal"
+    ].forEach(function (field) {
+      var value = optionalNonnegativeNumber(row && row[field]);
+      if (Number.isFinite(value)) next[field] = value;
+    });
+    return next;
   }).filter(function (row) {
-    return row.lengthsText || row.totalQty || row.actual || row.area;
+    return row.lengthsText || row.totalQty || row.actual || row.area ||
+      row.name || row.spec || row.model || row.remark || row.title ||
+      row.segment || row.segmentLength || row.tileSegmentLength || row.mainTileSegmentLength ||
+      row.defaultSegmentLength || row.tileSegment ||
+      row.amount || row.subtotal;
   });
 }
 
@@ -170,6 +206,9 @@ export function normalizeOrder(input) {
   var accessories = normalizeLineItems(items.accessories || source.accessories, false);
   var steels = normalizeLineItems(items.steels || source.steels, false);
   var otherTiles = normalizeLineItems(items.otherTiles || source.otherTiles, true);
+  var mainTileSegmentLength = optionalNonnegativeNumber(
+    items.mainTileSegmentLength !== undefined ? items.mainTileSegmentLength : source.mainTileSegmentLength
+  );
   var totalsSource = source.totals || {};
   var areaTotal = finiteNumber(totalsSource.areaTotal, sumFiniteAmounts(mainRows.map(function (row) { return row.area; })));
   var mainAmount = finiteNumber(totalsSource.mainAmount, finiteNumber(source.mainAmount, 0));
@@ -177,6 +216,14 @@ export function normalizeOrder(input) {
   var steelAmount = finiteNumber(totalsSource.steelAmount, sumFiniteAmounts(steels.map(function (item) { return item.subtotal; })));
   var otherTileAmount = finiteNumber(totalsSource.otherTileAmount, sumFiniteAmounts(otherTiles.map(function (item) { return item.subtotal; })));
   var grandAmount = computeGrandAmount(mainAmount, accessoryAmount, steelAmount, otherTileAmount);
+
+  var normalizedItems = {
+    mainRows: mainRows,
+    accessories: accessories,
+    steels: steels,
+    otherTiles: otherTiles
+  };
+  if (Number.isFinite(mainTileSegmentLength)) normalizedItems.mainTileSegmentLength = mainTileSegmentLength;
 
   return {
     id: compactText(source.id) || createId(),
@@ -199,12 +246,7 @@ export function normalizeOrder(input) {
       otherTileAmount: otherTileAmount,
       grandAmount: grandAmount
     },
-    items: {
-      mainRows: mainRows,
-      accessories: accessories,
-      steels: steels,
-      otherTiles: otherTiles
-    }
+    items: normalizedItems
   };
 }
 
@@ -578,6 +620,253 @@ export function getOrderStats(orders, dateStr) {
     totalAmount: sumFiniteAmounts(list.map(function (order) { return order.totals && order.totals.grandAmount; })),
     totalArea: sumFiniteAmounts(list.map(function (order) { return order.totals && order.totals.areaTotal; })),
     recentOrders: sortOrders(list).slice(0, 8)
+  };
+}
+
+function optionalAmount(value) {
+  return optionalNonnegativeNumber(value);
+}
+
+function amountWithFallback(value, fallback) {
+  var number = optionalAmount(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function sumLineSubtotals(items) {
+  return sumFiniteAmounts((Array.isArray(items) ? items : []).map(function (item) {
+    return item && item.subtotal;
+  }));
+}
+
+function sumMainRowAmounts(rows) {
+  return sumFiniteAmounts((Array.isArray(rows) ? rows : []).map(function (row) {
+    if (row && row.amount !== undefined) return row.amount;
+    return row && row.subtotal;
+  }));
+}
+
+function amountFromMainRow(row) {
+  if (row && row.amount !== undefined) return optionalAmount(row.amount);
+  return optionalAmount(row && row.subtotal);
+}
+
+function getMainRowsSource(order) {
+  var source = order || {};
+  var items = source.items || {};
+  return items.mainRows || source.mainRows;
+}
+
+function getMainTileSegmentLengthFromOrder(order) {
+  var source = order || {};
+  var items = source.items || {};
+  var value = optionalAmount(items.mainTileSegmentLength);
+  if (Number.isFinite(value)) return value;
+  return optionalAmount(source.mainTileSegmentLength);
+}
+
+function hasSegmentValue(text, target) {
+  var values = compactText(text).match(/[+-]?(?:\d+\.\d+|\d+|\.\d+)/g) || [];
+  return values.some(function (value) {
+    var number = Number(value);
+    return Number.isFinite(number) && Math.abs(number - target) < 0.0005;
+  });
+}
+
+function classifySegmentLengthValue(value) {
+  var number = optionalAmount(value);
+  if (!Number.isFinite(number)) return "";
+  if (Math.abs(number - 0.218) < 0.0005) return "red-wave";
+  if (Math.abs(number - 0.219) < 0.0005) return "xingda";
+  return "unknown";
+}
+
+function getPrioritySegmentLengthClassification(row) {
+  var fields = ["segmentLength", "tileSegmentLength", "mainTileSegmentLength"];
+  for (var index = 0; index < fields.length; index += 1) {
+    var value = row && row[fields[index]];
+    if (value === "" || value === null || value === undefined) continue;
+    return classifySegmentLengthValue(value) || "unknown";
+  }
+  return "";
+}
+
+function collectMainTileRowSignals(row) {
+  var redWave = false;
+  var xingda = false;
+  var textFields = [
+    "lengthsText",
+    "name",
+    "spec",
+    "model",
+    "remark",
+    "title",
+    "segmentText",
+    "segmentLengthText"
+  ];
+  var numericFields = [
+    "segment",
+    "segmentLength",
+    "defaultSegmentLength",
+    "tileSegment"
+  ];
+
+  numericFields.forEach(function (field) {
+    var value = optionalAmount(row && row[field]);
+    if (!Number.isFinite(value)) return;
+    if (Math.abs(value - 0.218) < 0.0005) redWave = true;
+    if (Math.abs(value - 0.219) < 0.0005) xingda = true;
+  });
+
+  textFields.forEach(function (field) {
+    var value = compactText(row && row[field]);
+    if (!value) return;
+    if (value.indexOf("红波") !== -1) redWave = true;
+    if (value.indexOf("星大") !== -1) xingda = true;
+    if (hasSegmentValue(value, 0.218)) redWave = true;
+    if (hasSegmentValue(value, 0.219)) xingda = true;
+  });
+
+  return {
+    redWave: redWave,
+    xingda: xingda
+  };
+}
+
+export function classifyMainTileRow(row) {
+  var priorityClassification = getPrioritySegmentLengthClassification(row);
+  if (priorityClassification) return priorityClassification;
+  var signals = collectMainTileRowSignals(row);
+  if (signals.redWave && !signals.xingda) return "red-wave";
+  if (signals.xingda && !signals.redWave) return "xingda";
+  return "unknown";
+}
+
+function addTileBreakdownAmount(result, classification, amount) {
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  if (classification === "red-wave") result.redWaveAmount += amount;
+  else if (classification === "xingda") result.xingdaAmount += amount;
+  else result.unknownTileAmount += amount;
+}
+
+function buildMainTileBreakdown(order, mainTileAmount) {
+  var rows = Array.isArray(getMainRowsSource(order)) ? getMainRowsSource(order) : [];
+  var fallbackSegmentLength = getMainTileSegmentLengthFromOrder(order);
+  var targetTotal = optionalAmount(mainTileAmount);
+  var result = {
+    redWaveAmount: 0,
+    xingdaAmount: 0,
+    unknownTileAmount: 0
+  };
+  if (!rows.length) {
+    addTileBreakdownAmount(result, "unknown", Number.isFinite(targetTotal) ? targetTotal : 0);
+    return result;
+  }
+
+  var rowInfos = rows.map(function (row) {
+    var sourceRow = row || {};
+    if (Number.isFinite(fallbackSegmentLength) && !getPrioritySegmentLengthClassification(sourceRow)) {
+      sourceRow = Object.assign({ mainTileSegmentLength: fallbackSegmentLength }, sourceRow);
+    }
+    return {
+      row: sourceRow,
+      classification: classifyMainTileRow(sourceRow),
+      amount: amountFromMainRow(sourceRow),
+      area: optionalAmount(sourceRow && sourceRow.area)
+    };
+  });
+  var knownAmountTotal = sumFiniteAmounts(rowInfos.map(function (info) { return info.amount; }));
+  if (!Number.isFinite(targetTotal)) targetTotal = knownAmountTotal;
+  var amountScale = knownAmountTotal > targetTotal && targetTotal > 0 ? targetTotal / knownAmountTotal : 1;
+  var assignedAmount = 0;
+
+  rowInfos.forEach(function (info) {
+    if (!Number.isFinite(info.amount)) return;
+    var amount = info.amount * amountScale;
+    assignedAmount += amount;
+    addTileBreakdownAmount(result, info.classification, amount);
+  });
+
+  var remainingAmount = Math.max(0, targetTotal - assignedAmount);
+  var unpricedRows = rowInfos.filter(function (info) { return !Number.isFinite(info.amount); });
+  var unpricedAreaTotal = sumFiniteAmounts(unpricedRows.map(function (info) { return info.area; }));
+  unpricedRows.forEach(function (info) {
+    var amount = Number.isFinite(info.area) && info.area > 0 && unpricedAreaTotal > 0 ?
+      remainingAmount * info.area / unpricedAreaTotal :
+      0;
+    assignedAmount += amount;
+    addTileBreakdownAmount(result, info.classification, amount);
+  });
+
+  addTileBreakdownAmount(result, "unknown", Math.max(0, targetTotal - assignedAmount));
+  return result;
+}
+
+function getTileAmountBreakdown(order, parts) {
+  var main = buildMainTileBreakdown(order, parts.mainTileAmount);
+  main.unknownTileAmount += parts.otherTileAmount;
+  return main;
+}
+
+export function getOrderAmountParts(order) {
+  var source = order || {};
+  var totals = source.totals || {};
+  var items = source.items || {};
+  var mainTileAmount = amountWithFallback(totals.mainAmount, sumMainRowAmounts(items.mainRows || source.mainRows));
+  var otherTileAmount = amountWithFallback(totals.otherTileAmount, sumLineSubtotals(items.otherTiles || source.otherTiles));
+  var accessoryAmount = amountWithFallback(totals.accessoryAmount, sumLineSubtotals(items.accessories || source.accessories));
+  var steelAmount = amountWithFallback(totals.steelAmount, sumLineSubtotals(items.steels || source.steels));
+  return {
+    mainTileAmount: mainTileAmount,
+    otherTileAmount: otherTileAmount,
+    tileAmount: mainTileAmount + otherTileAmount,
+    accessoryAmount: accessoryAmount,
+    steelAmount: steelAmount
+  };
+}
+
+export function buildOrderPieData(orders, mode) {
+  var tileOnly = mode === "tile";
+  var totals = (Array.isArray(orders) ? orders : []).reduce(function (result, order) {
+    var parts = getOrderAmountParts(order);
+    result.mainTileAmount += parts.mainTileAmount;
+    result.otherTileAmount += parts.otherTileAmount;
+    result.tileAmount += parts.tileAmount;
+    result.accessoryAmount += parts.accessoryAmount;
+    result.steelAmount += parts.steelAmount;
+    var tileBreakdown = getTileAmountBreakdown(order, parts);
+    result.redWaveAmount += tileBreakdown.redWaveAmount;
+    result.xingdaAmount += tileBreakdown.xingdaAmount;
+    result.unknownTileAmount += tileBreakdown.unknownTileAmount;
+    return result;
+  }, {
+    mainTileAmount: 0,
+    otherTileAmount: 0,
+    tileAmount: 0,
+    accessoryAmount: 0,
+    steelAmount: 0,
+    redWaveAmount: 0,
+    xingdaAmount: 0,
+    unknownTileAmount: 0
+  });
+
+  var slices = tileOnly ? [
+    { key: "red-wave", label: "红波", value: totals.redWaveAmount },
+    { key: "xingda", label: "星大", value: totals.xingdaAmount },
+    { key: "unknown-tile", label: "未区分", value: totals.unknownTileAmount }
+  ] : [
+    { key: "tile", label: "瓦片", value: totals.tileAmount },
+    { key: "accessory", label: "配件", value: totals.accessoryAmount },
+    { key: "steel", label: "钢铁材料", value: totals.steelAmount }
+  ];
+
+  slices = slices.filter(function (slice) {
+    return Number.isFinite(slice.value) && slice.value > 0;
+  });
+
+  return {
+    mode: tileOnly ? "tile" : "overview",
+    total: sumFiniteAmounts(slices.map(function (slice) { return slice.value; })),
+    slices: slices
   };
 }
 

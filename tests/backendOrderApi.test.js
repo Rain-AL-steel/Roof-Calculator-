@@ -1016,6 +1016,95 @@ describe("backend order API", function () {
     expect(body.order.items.mainRows).toEqual([]);
   });
 
+  it("persists main row segment lengths and returns them in create, get, and list responses", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+    var payload = Object.assign(createFrontendPayload(), {
+      id: "segment-create-client",
+      items: {
+        mainTileSegmentLength: 0.218,
+        mainRows: [
+          { lengthsText: "2.5", totalQty: 2, actual: 12, area: 5, segmentLength: 0.219 },
+          { lengthsText: "3.0", totalQty: 1, actual: 14, area: 3, tileSegmentLength: 0.218 },
+          { lengthsText: "1.8", totalQty: 4, actual: 8, area: 4 }
+        ],
+        accessories: [],
+        steels: [],
+        otherTiles: []
+      },
+      totals: {
+        areaTotal: 12,
+        mainAmount: 120,
+        accessoryAmount: 0,
+        steelAmount: 0,
+        otherTileAmount: 0,
+        grandAmount: 120
+      }
+    });
+
+    var response = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload)
+    });
+    var body = await response.json();
+    var createdId = body.order.id;
+    var getResponse = await fetch(serverInfo.url + "/api/orders/" + createdId, {
+      headers: authHeaders()
+    });
+    var getBody = await getResponse.json();
+    var listResponse = await fetch(serverInfo.url + "/api/orders", {
+      headers: authHeaders()
+    });
+    var listBody = await listResponse.json();
+
+    expect(response.status).toBe(200);
+    expect(getResponse.status).toBe(200);
+    expect(listResponse.status).toBe(200);
+    expect(mock.captured.createData.mainRows.create.map(function (row) { return row.segmentLength; })).toEqual([0.219, 0.218, 0.218]);
+    expect(body.order.items.mainRows.map(function (row) { return row.segmentLength; })).toEqual([0.219, 0.218, 0.218]);
+    expect(getBody.order.items.mainRows.map(function (row) { return row.segmentLength; })).toEqual([0.219, 0.218, 0.218]);
+    expect(listBody.orders[0].items.mainRows.map(function (row) { return row.segmentLength; })).toEqual([0.219, 0.218, 0.218]);
+  });
+
+  it("keeps missing or invalid main row segment lengths nullable", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+    var payload = Object.assign(createFrontendPayload(), {
+      id: "segment-null-client",
+      items: {
+        mainRows: [
+          { lengthsText: "2.5", totalQty: 2, actual: 12, area: 5 },
+          { lengthsText: "3.0", totalQty: 1, actual: 14, area: 3, segmentLength: "not-a-number" }
+        ],
+        accessories: [],
+        steels: [],
+        otherTiles: []
+      },
+      totals: {
+        areaTotal: 8,
+        mainAmount: 80,
+        accessoryAmount: 0,
+        steelAmount: 0,
+        otherTileAmount: 0,
+        grandAmount: 80
+      }
+    });
+
+    var response = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload)
+    });
+    var body = await response.json();
+    var returnedValues = body.order.items.mainRows.map(function (row) { return row.segmentLength; });
+
+    expect(response.status).toBe(200);
+    expect(mock.captured.createData.mainRows.create.map(function (row) { return row.segmentLength; })).toEqual([null, null]);
+    expect(returnedValues).toEqual([null, null]);
+    expect(returnedValues.some(Number.isNaN)).toBe(false);
+  });
+
   it("prefers an explicit clientOrderId over the frontend id for create idempotency", async function () {
     var mock = createMockPrisma();
     var serverInfo = await listen(createTestApp(mock));
@@ -1143,7 +1232,7 @@ describe("backend order API", function () {
       steelAmount: 4,
       otherTileAmount: 5,
       grandAmount: 14,
-      mainRows: [{ lengthsText: "1", totalQty: 1, actual: 1, area: 1 }]
+      mainRows: [{ lengthsText: "1", totalQty: 1, actual: 1, area: 1, segmentLength: 0.218 }]
     }));
     var serverInfo = await listen(createTestApp(mock));
     var payload = Object.assign(createFrontendPayload(), {
@@ -1153,7 +1242,7 @@ describe("backend order API", function () {
       customerName: "Updated Customer",
       completionMonth: "2026-06",
       items: {
-        mainRows: [{ lengthsText: "2.5", totalQty: 2, actual: 5, area: 5 }],
+        mainRows: [{ lengthsText: "2.5", totalQty: 2, actual: 5, area: 5, segmentLength: 0.219 }],
         accessories: [{ name: "Accessory", qty: 1, unit: "pcs", price: 3, subtotal: 3 }],
         steels: [],
         otherTiles: []
@@ -1194,7 +1283,9 @@ describe("backend order API", function () {
     expect(mock.captured.createMainRowsArgs.data).toHaveLength(1);
     expect(mock.captured.createLineItemsArgs.data).toHaveLength(1);
     expect(mock.captured.createMainRowsArgs.data[0].orderId).toBe(existing.id);
+    expect(mock.captured.createMainRowsArgs.data[0].segmentLength).toBe(0.219);
     expect(mock.captured.createLineItemsArgs.data[0].orderId).toBe(existing.id);
+    expect(body.order.items.mainRows[0].segmentLength).toBe(0.219);
   });
 
   it("returns 503 for PUT P2028 transaction timeouts without retrying the closed transaction", async function () {

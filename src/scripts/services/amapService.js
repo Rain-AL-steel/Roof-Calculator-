@@ -34,6 +34,47 @@ export function resolvePreferredGeocodeCities(address, configuredCity) {
   return [first, fallback];
 }
 
+function getAddressComponent(geocode) {
+  return geocode && geocode.addressComponent && typeof geocode.addressComponent === "object" ? geocode.addressComponent : {};
+}
+
+function getGeocodeCityProbeText(geocode) {
+  var component = getAddressComponent(geocode);
+  return [
+    geocode && geocode.city,
+    geocode && geocode.province,
+    geocode && geocode.district,
+    geocode && geocode.formattedAddress,
+    geocode && geocode.adcode,
+    component.city,
+    component.province,
+    component.district,
+    component.adcode
+  ].map(compactText).filter(Boolean).join(" ");
+}
+
+export function isAllowedGeocodeResult(geocode) {
+  return Boolean(detectSupportedGeocodeCity(getGeocodeCityProbeText(geocode)));
+}
+
+function getAllowedGeocode(result) {
+  var geocodes = result && Array.isArray(result.geocodes) ? result.geocodes : [];
+  for (var index = 0; index < geocodes.length; index += 1) {
+    var geocode = geocodes[index];
+    var lnglat = readLngLat(geocode && geocode.location);
+    if (lnglat && isAllowedGeocodeResult(geocode)) {
+      return { geocode: geocode, lnglat: lnglat };
+    }
+  }
+  return null;
+}
+
+function buildCityScopedAddress(address, city) {
+  var text = compactText(address);
+  if (!text || detectSupportedGeocodeCity(text)) return text;
+  return city + "\u5e02 " + text;
+}
+
 function ensureAmapLoaderScript() {
   if (globalThis.AMapLoader) return Promise.resolve(globalThis.AMapLoader);
   if (loaderScriptPromise) return loaderScriptPromise;
@@ -115,24 +156,24 @@ export function resetAmapLoadCache() {
 
 function geocodeAddressWithCity(AMap, text, city) {
   return new Promise(function (resolve, reject) {
+    var queryText = buildCityScopedAddress(text, city);
     var geocoder = new AMap.Geocoder({
       city: city
     });
 
-    geocoder.getLocation(text, function (status, result) {
-      var geocodes = result && Array.isArray(result.geocodes) ? result.geocodes : [];
-      var first = geocodes[0];
-      var lnglat = first ? readLngLat(first.location) : null;
-      if (status === "complete" && result && result.info === "OK" && lnglat) {
+    geocoder.getLocation(queryText, function (status, result) {
+      var allowed = getAllowedGeocode(result);
+      if (status === "complete" && result && result.info === "OK" && allowed) {
+        var first = allowed.geocode;
         resolve({
-          lng: lnglat.lng,
-          lat: lnglat.lat,
+          lng: allowed.lnglat.lng,
+          lat: allowed.lnglat.lat,
           address: text,
           formattedAddress: compactText(first.formattedAddress) || text,
-          province: compactText(first.province),
-          city: compactText(first.city),
-          district: compactText(first.district),
-          adcode: compactText(first.adcode),
+          province: compactText(first.province || getAddressComponent(first).province),
+          city: compactText(first.city || getAddressComponent(first).city),
+          district: compactText(first.district || getAddressComponent(first).district),
+          adcode: compactText(first.adcode || getAddressComponent(first).adcode),
           geocodedAt: new Date().toISOString()
         });
         return;

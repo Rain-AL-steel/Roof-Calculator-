@@ -111,6 +111,7 @@ model OrderMainRow {
   totalQty    Decimal  @default(0) @db.Decimal(14, 4)
   actual      Decimal  @default(0) @db.Decimal(14, 4)
   area        Decimal  @default(0) @db.Decimal(14, 4)
+  segmentLength Decimal?  @db.Decimal(8, 4)
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])

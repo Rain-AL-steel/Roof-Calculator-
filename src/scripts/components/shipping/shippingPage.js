@@ -8,7 +8,6 @@ import {
   lengthToPreciseSegments,
   segmentCountToLength
 } from "../../calc.js";
-import { generateOrderNo } from "../../services/orderService.js";
 import { buildPreferredReport } from "../../services/reportService.js";
 import { escapeHtml, formatMoney, formatNum, formatTrimFixed, parseNum } from "../../utils.js";
 
@@ -27,15 +26,31 @@ function getOptionValue(item) {
 }
 
 function getCatalogPrice(item) {
-  return item && Number.isFinite(Number(item.defaultPrice)) ? Number(item.defaultPrice) : NaN;
+  if (!item || item.defaultPrice === "" || item.defaultPrice === null || item.defaultPrice === undefined) return NaN;
+  return Number.isFinite(Number(item.defaultPrice)) ? Number(item.defaultPrice) : NaN;
 }
 
-function formatInputPrice(item) {
+export function formatInputPrice(item, options) {
   var price = getCatalogPrice(item);
+  if (options && options.blankZero && price === 0) return "";
   return Number.isFinite(price) ? String(price) : "";
 }
 
-  function getDisplayName(item) {
+export function normalizeOrderSegmentLength(value) {
+  var number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : NaN;
+}
+
+export function attachMainTileSegmentLength(rows, segmentLength) {
+  var normalizedSegment = normalizeOrderSegmentLength(segmentLength);
+  return (Array.isArray(rows) ? rows : []).map(function (row) {
+    var next = Object.assign({}, row || {});
+    if (Number.isFinite(normalizedSegment)) next.segmentLength = normalizedSegment;
+    return next;
+  });
+}
+
+function getDisplayName(item) {
   if (!item) return "";
   return [item.name, item.spec].filter(Boolean).join(" ").trim();
 }
@@ -54,7 +69,6 @@ export function initShippingPage(options) {
   var globalSegmentInput = document.getElementById("globalSegmentInput");
   var unitPriceInput = document.getElementById("unitPrice");
   var orderDateInput = document.getElementById("orderDate");
-  var orderNoInput = document.getElementById("orderNo");
   var customerNameInput = document.getElementById("customerName");
   var tileColorInput = document.getElementById("tileColor");
   var deliveryAddressInput = document.getElementById("deliveryAddress");
@@ -119,6 +133,10 @@ export function initShippingPage(options) {
     return Number.isFinite(value) && value > 0 ? value : NaN;
   }
 
+  function getCurrentMainTileSegmentLength() {
+    return normalizeOrderSegmentLength(globalSegmentInput && globalSegmentInput.value);
+  }
+
   function getMainAmount(area) {
     var unitPrice = parseNum(unitPriceInput.value);
     return computeMainAmount(area, unitPrice);
@@ -131,16 +149,6 @@ export function initShippingPage(options) {
 
   function ensureOrderDate() {
     if (orderDateInput && !orderDateInput.value) orderDateInput.value = getDateOnly(new Date());
-  }
-
-  function ensureOrderNo() {
-    if (!orderNoInput) return "";
-    var value = orderNoInput.value.trim();
-    if (!value) {
-      value = generateOrderNo(new Date());
-      orderNoInput.value = value;
-    }
-    return value;
   }
 
   function renderDataList(listEl, optionsList) {
@@ -366,7 +374,7 @@ export function initShippingPage(options) {
       grouped[key].lengths[data.length.toFixed(4)] = data.length;
       grouped[key].area += data.area;
     });
-    return Object.keys(grouped).map(function (key) {
+    var mergedRows = Object.keys(grouped).map(function (key) {
       var group = grouped[key];
       var sortedLengths = Object.keys(group.lengths).map(function (lengthKey) {
         return group.lengths[lengthKey];
@@ -382,6 +390,7 @@ export function initShippingPage(options) {
     }).sort(function (a, b) {
       return b.actual - a.actual;
     });
+    return attachMainTileSegmentLength(mergedRows, getCurrentMainTileSegmentLength());
   }
 
   function getDefaultUnitByName(name) {
@@ -399,7 +408,7 @@ export function initShippingPage(options) {
       '<label class="line-field"><span class="field-label">名称</span><input class="acc-name" type="text" value="' + escapeHtml(name) + '" /></label>' +
       '<label class="line-field"><span class="field-label">数量</span><input class="acc-qty" type="number" inputmode="decimal" step="1" /></label>' +
       '<label class="line-field"><span class="field-label">单位</span><input class="acc-unit" type="text" list="unitOptions" value="' + escapeHtml(defaultUnit) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">单价</span><input class="acc-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item)) + '" /></label>' +
+      '<label class="line-field"><span class="field-label">单价</span><input class="acc-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item, { blankZero: true })) + '" /></label>' +
       '<div class="subtotal-box"><span>小计</span><output class="acc-subtotal">—</output></div>' +
       '<button type="button" class="icon-btn acc-del" title="删除配件" aria-label="删除配件">' + iconSvg("trash") + '</button>';
     row.addEventListener("input", recalcAccessoryTotals);
@@ -452,7 +461,7 @@ export function initShippingPage(options) {
       '<label class="line-field"><span class="field-label">名称</span><input class="steel-name" type="text" value="' + escapeHtml(name) + '" /></label>' +
       '<label class="line-field"><span class="field-label">数量</span><input class="steel-qty" type="number" inputmode="decimal" step="1" /></label>' +
       '<label class="line-field"><span class="field-label">单位</span><input class="steel-unit" type="text" list="unitOptions" value="' + escapeHtml(finalUnit) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">单价</span><input class="steel-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item)) + '" /></label>' +
+      '<label class="line-field"><span class="field-label">单价</span><input class="steel-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item, { blankZero: true })) + '" /></label>' +
       '<div class="subtotal-box"><span>小计</span><output class="steel-subtotal">—</output></div>' +
       '<button type="button" class="icon-btn steel-del" title="删除材料" aria-label="删除材料">' + iconSvg("trash") + '</button>';
     row.addEventListener("input", recalcSteelTotals);
@@ -591,10 +600,10 @@ export function initShippingPage(options) {
   function buildReportSnapshot() {
     var areaTotal = totals.area;
     var unitPrice = parseNum(unitPriceInput.value);
+    var mainTileSegmentLength = getCurrentMainTileSegmentLength();
     ensureOrderDate();
-    return {
+    var snapshot = {
       orderDate: orderDateInput ? orderDateInput.value : getDateOnly(new Date()),
-      orderNo: ensureOrderNo(),
       mainRows: getMergedMainRows(),
       unitPrice: unitPrice,
       mainAmount: getMainAmount(areaTotal),
@@ -608,6 +617,8 @@ export function initShippingPage(options) {
       remark: orderRemarkInput ? orderRemarkInput.value.trim() : "",
       logoDataUrl: reportLogoDataUrl
     };
+    if (Number.isFinite(mainTileSegmentLength)) snapshot.mainTileSegmentLength = mainTileSegmentLength;
+    return snapshot;
   }
 
   function buildOrderDraft() {
@@ -618,7 +629,6 @@ export function initShippingPage(options) {
     var snapshot = buildReportSnapshot();
     return {
       orderDate: snapshot.orderDate,
-      orderNo: snapshot.orderNo,
       customerName: snapshot.customerName,
       tileColor: snapshot.tileColor,
       deliveryAddress: snapshot.deliveryAddress,
@@ -632,12 +642,14 @@ export function initShippingPage(options) {
         otherTileAmount: totals.otherTiles,
         grandAmount: totals.grand
       },
-      items: {
+      items: Object.assign({
         mainRows: snapshot.mainRows,
         accessories: snapshot.accessories,
         steels: snapshot.steels,
         otherTiles: snapshot.otherTiles
-      }
+      }, Number.isFinite(snapshot.mainTileSegmentLength) ? {
+        mainTileSegmentLength: snapshot.mainTileSegmentLength
+      } : {})
     };
   }
 

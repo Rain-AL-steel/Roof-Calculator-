@@ -19,9 +19,9 @@ import {
   uploadOrderMapImageToApi
 } from "./services/apiClient.js";
 import {
+  buildOrderPieData,
   clearOrdersWithApiFallback,
   deleteOrderWithApiFallback,
-  generateOrderNo,
   getDateOnly,
   getOrderStats,
   getOrderTrend,
@@ -77,6 +77,11 @@ var trendOrderEmpty = document.getElementById("trendOrderEmpty");
 var orderTrendChart = document.getElementById("orderTrendChart");
 var trendPointDetail = document.getElementById("trendPointDetail");
 var trendEmpty = document.getElementById("trendEmpty");
+var orderPieChart = document.getElementById("orderPieChart");
+var orderPieLegend = document.getElementById("orderPieLegend");
+var orderPieEmpty = document.getElementById("orderPieEmpty");
+var trendPieSubtitle = document.getElementById("trendPieSubtitle");
+var trendPieTileToggle = document.getElementById("trendPieTileToggle");
 var orderLocationMap = document.getElementById("orderLocationMap");
 var orderMapSubtitle = document.getElementById("orderMapSubtitle");
 var orderMapStatus = document.getElementById("orderMapStatus");
@@ -89,8 +94,9 @@ var mapImageLightboxCaption = document.getElementById("mapImageLightboxCaption")
 var mapImageLightboxClose = document.getElementById("mapImageLightboxClose");
 
 var historyDateFilter = document.getElementById("historyDateFilter");
-var historyOrderSearch = document.getElementById("historyOrderSearch");
 var historyCustomerSearch = document.getElementById("historyCustomerSearch");
+var historyAddressSearch = document.getElementById("historyAddressSearch");
+var historySortSelect = document.getElementById("historySortSelect");
 var resetHistoryFilters = document.getElementById("resetHistoryFilters");
 var historyCountText = document.getElementById("historyCountText");
 var historyTableBody = document.getElementById("historyTableBody");
@@ -103,6 +109,7 @@ var recordDetailBody = document.getElementById("recordDetailBody");
 var closeRecordDetail = document.getElementById("closeRecordDetail");
 
 var activeTrendRange = "7d";
+var activeTrendPieMode = "overview";
 var activeDashboardMonth = getMonthKey(new Date());
 var activeTrendPointKey = "";
 var trendPointDetailsByKey = {};
@@ -315,6 +322,66 @@ function renderTrendChart(trend, ordersByKey) {
     labels;
 }
 
+var PIE_COLORS = ["#2f7f6f", "#c65a3a", "#6f5bb8", "#94743f"];
+
+function getPieSliceColor(index) {
+  return PIE_COLORS[index % PIE_COLORS.length];
+}
+
+function renderPieSvg(data) {
+  var radius = 54;
+  var circumference = 2 * Math.PI * radius;
+  var offset = 0;
+  var slices = data.slices.map(function (slice, index) {
+    var length = data.total > 0 ? slice.value / data.total * circumference : 0;
+    var dashOffset = -offset;
+    offset += length;
+    return "<circle class='pie-slice' cx='80' cy='80' r='" + radius + "' fill='none' stroke='" + getPieSliceColor(index) + "' stroke-width='26' stroke-dasharray='" + length.toFixed(2) + " " + circumference.toFixed(2) + "' stroke-dashoffset='" + dashOffset.toFixed(2) + "' transform='rotate(-90 80 80)'><title>" + escapeHtml(slice.label) + "：" + formatMoney(slice.value) + " 元</title></circle>";
+  }).join("");
+  return "<circle class='pie-track' cx='80' cy='80' r='" + radius + "' fill='none'></circle>" +
+    slices +
+    "<circle class='pie-hole' cx='80' cy='80' r='36'></circle>" +
+    "<text class='pie-total-label' x='80' y='75' text-anchor='middle'>合计</text>" +
+    "<text class='pie-total-value' x='80' y='94' text-anchor='middle'>" + escapeHtml(formatMoney(data.total)) + "</text>";
+}
+
+function renderPieLegend(data) {
+  return data.slices.map(function (slice, index) {
+    var percent = data.total > 0 ? slice.value / data.total * 100 : 0;
+    return "<div class='trend-pie-legend-item'>" +
+      "<i style='background:" + getPieSliceColor(index) + "'></i>" +
+      "<span>" + escapeHtml(slice.label) + "</span>" +
+      "<strong>" + escapeHtml(formatMoney(slice.value)) + " 元</strong>" +
+      "<em>" + escapeHtml(percent.toFixed(1)) + "%</em>" +
+      "</div>";
+  }).join("");
+}
+
+function renderTrendPie(orders) {
+  if (!orderPieChart || !orderPieLegend) return;
+  var data = buildOrderPieData(orders, activeTrendPieMode);
+  var hasData = data.total > 0 && data.slices.length > 0;
+  if (trendPieTileToggle) {
+    var tileOnly = activeTrendPieMode === "tile";
+    trendPieTileToggle.classList.toggle("active", tileOnly);
+    trendPieTileToggle.setAttribute("aria-pressed", tileOnly ? "true" : "false");
+    trendPieTileToggle.setAttribute("title", tileOnly ? "显示瓦片、配件、钢铁材料总览" : "只显示瓦片数据");
+  }
+  if (trendPieSubtitle) {
+    trendPieSubtitle.textContent = activeTrendPieMode === "tile" ? "只看主瓦与其他瓦片金额" : "瓦片、配件、钢铁材料金额占比";
+  }
+  setEmptyNote(orderPieEmpty, !hasData);
+  orderPieChart.classList.toggle("is-muted", !hasData);
+  if (!hasData) {
+    orderPieChart.innerHTML = "";
+    orderPieLegend.innerHTML = "";
+    return;
+  }
+  orderPieChart.setAttribute("aria-label", "订单分类金额饼图，合计 " + formatMoney(data.total) + " 元");
+  orderPieChart.innerHTML = renderPieSvg(data);
+  orderPieLegend.innerHTML = renderPieLegend(data);
+}
+
 function renderTrend(orders) {
   var trend = getOrderTrend(orders, activeTrendRange, new Date());
   var trendOrders = getOrdersInTrendRange(orders, activeTrendRange, new Date());
@@ -334,6 +401,7 @@ function renderTrend(orders) {
   if (activeTrendPointKey && !trendPointDetailsByKey[activeTrendPointKey]) activeTrendPointKey = "";
   renderTrendOrderList(trendOrders);
   renderTrendChart(trend, ordersByKey);
+  renderTrendPie(trendOrders);
   renderTrendPointDetail(activeTrendPointKey);
   setEmptyNote(trendEmpty, !hasData);
   orderTrendChart.classList.toggle("is-muted", !hasData);
@@ -599,6 +667,17 @@ function getOrderLocation(order) {
 
 function getOrderAddress(order) {
   return order && order.deliveryAddress ? order.deliveryAddress : "";
+}
+
+function getOrderLocationText(order) {
+  var location = order && order.deliveryLocation ? order.deliveryLocation : null;
+  return String(
+    (order && order.deliveryAddress) ||
+    (order && order.address) ||
+    (location && location.formattedAddress) ||
+    (location && location.address) ||
+    ""
+  ).trim() || "未填写位置";
 }
 
 function formatCompletionMonth(value) {
@@ -1134,25 +1213,46 @@ function renderDashboard() {
 
 function getFilteredOrders() {
   var dateValue = historyDateFilter.value;
-  var orderQuery = historyOrderSearch.value.trim().toLowerCase();
   var customerQuery = historyCustomerSearch.value.trim().toLowerCase();
+  var addressQuery = historyAddressSearch.value.trim().toLowerCase();
   return loadOrders().filter(function (order) {
     var matchesDate = !dateValue || order.orderDate === dateValue;
-    var matchesOrder = !orderQuery || String(order.orderNo || "").toLowerCase().indexOf(orderQuery) !== -1;
     var matchesCustomer = !customerQuery || String(order.customerName || "").toLowerCase().indexOf(customerQuery) !== -1;
-    return matchesDate && matchesOrder && matchesCustomer;
+    var matchesAddress = !addressQuery || getOrderLocationText(order).toLowerCase().indexOf(addressQuery) !== -1;
+    return matchesDate && matchesCustomer && matchesAddress;
+  });
+}
+
+function getOrderAreaValue(order) {
+  var area = Number(order && order.totals && order.totals.areaTotal);
+  return Number.isFinite(area) ? area : 0;
+}
+
+function sortHistoryOrders(orders) {
+  var mode = historySortSelect ? historySortSelect.value : "time-desc";
+  return (Array.isArray(orders) ? orders : []).slice().sort(function (a, b) {
+    if (mode === "area-desc" || mode === "area-asc") {
+      var areaDiff = getOrderAreaValue(b) - getOrderAreaValue(a);
+      if (mode === "area-asc") areaDiff = -areaDiff;
+      if (areaDiff) return areaDiff;
+    } else {
+      var timeDiff = getOrderDateTime(b) - getOrderDateTime(a);
+      if (mode === "time-asc") timeDiff = -timeDiff;
+      if (timeDiff) return timeDiff;
+    }
+    return String(getOrderCustomer(a)).localeCompare(String(getOrderCustomer(b)), "zh-CN");
   });
 }
 
 function renderHistory() {
-  var filtered = getFilteredOrders();
+  var filtered = sortHistoryOrders(getFilteredOrders());
   historyCountText.textContent = "共 " + filtered.length + " 条记录";
   setEmptyNote(historyEmpty, filtered.length === 0);
   historyTableBody.innerHTML = filtered.map(function (order) {
     return "<tr>" +
       "<td>" + escapeHtml(order.orderDate) + "</td>" +
-      "<td><strong>" + escapeHtml(getOrderTitle(order)) + "</strong></td>" +
       "<td>" + escapeHtml(getOrderCustomer(order)) + "</td>" +
+      "<td class='history-location'>" + escapeHtml(getOrderLocationText(order)) + "</td>" +
       "<td>" + formatMoney(order.totals.grandAmount) + "</td>" +
       "<td>" + formatArea(order.totals.areaTotal) + "</td>" +
       "<td><div class='history-actions'>" +
@@ -1321,14 +1421,13 @@ function deleteRecordMapImage(orderId) {
 function renderRecordDetail(order, mode) {
   recordDetail.hidden = false;
   recordDetailTitle.textContent = mode === "edit" ? "编辑订单" : "订单详情";
-  recordDetailSubtitle.textContent = getOrderTitle(order) + " · " + order.orderDate;
+  recordDetailSubtitle.textContent = getOrderCustomer(order) + " · " + order.orderDate;
 
   if (mode === "edit") {
     recordDetailBody.innerHTML =
       "<form class='record-edit-form' id='recordEditForm' data-order-id='" + escapeHtml(order.id) + "'>" +
       "<div class='form-grid'>" +
       "<label class='field'><span>订单日期</span><input name='orderDate' type='date' value='" + escapeHtml(order.orderDate) + "' required /></label>" +
-      "<label class='field'><span>订单编号</span><input name='orderNo' type='text' value='" + escapeHtml(order.orderNo) + "' /></label>" +
       "<label class='field'><span>客户名称</span><input name='customerName' type='text' value='" + escapeHtml(order.customerName) + "' /></label>" +
       "<label class='field'><span>颜色</span><input name='tileColor' type='text' value='" + escapeHtml(order.tileColor) + "' /></label>" +
       "<label class='field span-2'><span>收货地址</span><input name='deliveryAddress' type='text' value='" + escapeHtml(order.deliveryAddress) + "' /></label>" +
@@ -1354,7 +1453,7 @@ function renderRecordDetail(order, mode) {
     "<div><span>颜色</span><strong>" + escapeHtml(order.tileColor || "未填写") + "</strong></div>" +
     "<div><span>金额</span><strong>" + formatMoney(order.totals.grandAmount) + " 元</strong></div>" +
     "<div><span>面积</span><strong>" + formatArea(order.totals.areaTotal) + " ㎡</strong></div>" +
-    "<div><span>收货地址</span><strong>" + escapeHtml(order.deliveryAddress || "未填写") + "</strong></div>" +
+    "<div><span>位置</span><strong>" + escapeHtml(getOrderLocationText(order)) + "</strong></div>" +
     "<div><span>建成年月</span><strong>" + escapeHtml(formatCompletionMonth(order.completionMonth)) + "</strong></div>" +
     "<div><span>地图定位</span><strong>" + (getOrderLocation(order) ? "已定位" : "待定位") + "</strong></div>" +
     "</div>" +
@@ -1395,7 +1494,7 @@ function openRecord(orderId, mode) {
 function removeOrder(orderId) {
   var order = findOrder(orderId);
   if (!order) return;
-  if (!window.confirm("确定删除订单 " + getOrderTitle(order) + " 吗？")) return;
+  if (!window.confirm("确定删除 " + getOrderCustomer(order) + " 在 " + order.orderDate + " 的订单记录吗？")) return;
   deleteOrderWithApiFallback(order.id, order).then(function () {
     recordDetail.hidden = true;
     renderAll();
@@ -1520,17 +1619,14 @@ function saveCurrentOrder() {
   }
   var now = new Date();
   var order = normalizeOrder(Object.assign({}, draft, {
-    orderNo: draft.orderNo || generateOrderNo(now),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString()
   }));
   setOrderSaveBusy(true);
   resolveOrderLocation(order, null).then(function (result) {
     return upsertOrderWithApiFallback(result.order).then(function (saved) {
-      var orderNoInput = document.getElementById("orderNo");
-      if (orderNoInput) orderNoInput.value = saved.orderNo;
       renderAll();
-      window.alert("订单 " + saved.orderNo + " 已保存。" + (result.warning ? "\n" + result.warning : ""));
+      window.alert("订单已保存。" + (result.warning ? "\n" + result.warning : ""));
     });
   }).catch(function (error) {
     window.alert(error.message || "订单保存失败。");
@@ -1631,6 +1727,13 @@ trendRangeButtons.forEach(function (button) {
   });
 });
 
+if (trendPieTileToggle) {
+  trendPieTileToggle.addEventListener("click", function () {
+    activeTrendPieMode = activeTrendPieMode === "tile" ? "overview" : "tile";
+    renderTrend(loadOrders());
+  });
+}
+
 if (orderTrendChart) {
   orderTrendChart.addEventListener("click", function (event) {
     var point = event.target.closest("[data-trend-key]");
@@ -1673,14 +1776,16 @@ document.addEventListener("keydown", function (event) {
   }
 });
 
-[historyDateFilter, historyOrderSearch, historyCustomerSearch].forEach(function (input) {
+[historyDateFilter, historyCustomerSearch, historyAddressSearch, historySortSelect].forEach(function (input) {
   input.addEventListener("input", renderHistory);
+  input.addEventListener("change", renderHistory);
 });
 
 resetHistoryFilters.addEventListener("click", function () {
   historyDateFilter.value = "";
-  historyOrderSearch.value = "";
   historyCustomerSearch.value = "";
+  historyAddressSearch.value = "";
+  historySortSelect.value = "time-desc";
   renderHistory();
 });
 

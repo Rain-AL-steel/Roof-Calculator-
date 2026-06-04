@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  buildOrderPieData,
   buildExportPayload,
+  classifyMainTileRow,
   clearOrdersWithApiFallback,
+  getOrderAmountParts,
   getOrdersInTrendRange,
   getOrderTrend,
   getOrderStats,
@@ -128,6 +131,22 @@ describe("order service", function () {
     expect(order.items.mainRows).toHaveLength(1);
   });
 
+  it("preserves saved main tile segment fields for future tile classification", function () {
+    var order = normalizeOrder({
+      orderDate: "2026-05-26",
+      totals: { mainAmount: 88 },
+      items: {
+        mainTileSegmentLength: "0.218",
+        mainRows: [
+          { lengthsText: "2.5", totalQty: 2, actual: 12, area: 8, segmentLength: "0.218" }
+        ]
+      }
+    });
+
+    expect(order.items.mainTileSegmentLength).toBe(0.218);
+    expect(order.items.mainRows[0].segmentLength).toBe(0.218);
+  });
+
   it("normalizes completion month values", function () {
     expect(normalizeOrder({ completionMonth: "2026/7" }).completionMonth).toBe("2026-07");
     expect(normalizeOrder({ completionMonth: "2026-13" }).completionMonth).toBe("");
@@ -196,6 +215,124 @@ describe("order service", function () {
     expect(trend.points[11].key).toBe("2026-05");
     expect(trend.totalCount).toBe(3);
     expect(trend.totalAmount).toBe(190);
+  });
+
+  it("builds order pie data from safe amount parts", function () {
+    var orders = [
+      makeOrder("a", "2026-05-26", 100),
+      Object.assign({}, makeOrder("b", "2026-05-25", 0), {
+        totals: {
+          mainAmount: undefined,
+          otherTileAmount: undefined,
+          accessoryAmount: undefined,
+          steelAmount: undefined
+        },
+        items: {
+          mainRows: [{ amount: 30 }],
+          accessories: [{ subtotal: 5 }, { subtotal: NaN }],
+          steels: [{ subtotal: 9 }],
+          otherTiles: [{ subtotal: 12 }]
+        }
+      })
+    ];
+
+    expect(getOrderAmountParts(orders[1])).toEqual({
+      mainTileAmount: 30,
+      otherTileAmount: 12,
+      tileAmount: 42,
+      accessoryAmount: 5,
+      steelAmount: 9
+    });
+
+    var overview = buildOrderPieData(orders, "overview");
+    expect(overview.total).toBe(166);
+    expect(overview.slices).toEqual([
+      { key: "tile", label: "瓦片", value: 142 },
+      { key: "accessory", label: "配件", value: 13 },
+      { key: "steel", label: "钢铁材料", value: 11 }
+    ]);
+  });
+
+  it("classifies main tile rows only when saved fields clearly identify the segment", function () {
+    expect(classifyMainTileRow({ lengthsText: "0.218" })).toBe("red-wave");
+    expect(classifyMainTileRow({ segmentLength: 0.219 })).toBe("xingda");
+    expect(classifyMainTileRow({ tileSegmentLength: 0.218 })).toBe("red-wave");
+    expect(classifyMainTileRow({ mainTileSegmentLength: 0.219 })).toBe("xingda");
+    expect(classifyMainTileRow({ segmentLength: 0.217, spec: "红波 0.218" })).toBe("unknown");
+    expect(classifyMainTileRow({ spec: "红波 0.218" })).toBe("red-wave");
+    expect(classifyMainTileRow({ model: "星大 0.219" })).toBe("xingda");
+    expect(classifyMainTileRow({ lengthsText: "2.500" })).toBe("unknown");
+    expect(classifyMainTileRow({ remark: "0.218 / 0.219 混合" })).toBe("unknown");
+  });
+
+  it("builds tile-only pie data split by red wave, xingda, and unknown tiles", function () {
+    var splitByArea = buildOrderPieData([
+      Object.assign({}, makeOrder("a", "2026-05-26", 0), {
+        totals: {
+          mainAmount: 120,
+          otherTileAmount: 10,
+          accessoryAmount: 10,
+          steelAmount: 5
+        },
+        items: {
+          mainRows: [
+            { lengthsText: "0.218", area: 6 },
+            { segmentLength: 0.219, area: 4 },
+            { lengthsText: "2.500", area: 2 }
+          ],
+          otherTiles: [{ subtotal: 10 }]
+        }
+      })
+    ], "tile");
+
+    var splitByRowAmount = buildOrderPieData([
+      Object.assign({}, makeOrder("b", "2026-05-26", 0), {
+        totals: {
+          mainAmount: undefined,
+          otherTileAmount: 0,
+          accessoryAmount: 10,
+          steelAmount: 5
+        },
+        items: {
+          mainRows: [
+            { lengthsText: "0.218", amount: 70 },
+            { lengthsText: "0.219", subtotal: 30 }
+          ],
+          otherTiles: []
+        }
+      })
+    ], "tile");
+    var splitByOrderSegment = buildOrderPieData([
+      Object.assign({}, makeOrder("c", "2026-05-26", 0), {
+        totals: {
+          mainAmount: 90,
+          otherTileAmount: 0,
+          accessoryAmount: 0,
+          steelAmount: 0
+        },
+        items: {
+          mainTileSegmentLength: 0.219,
+          mainRows: [
+            { lengthsText: "2.500", area: 9 }
+          ],
+          otherTiles: []
+        }
+      })
+    ], "tile");
+
+    expect(splitByArea.slices).toEqual([
+      { key: "red-wave", label: "红波", value: 60 },
+      { key: "xingda", label: "星大", value: 40 },
+      { key: "unknown-tile", label: "未区分", value: 30 }
+    ]);
+    expect(splitByRowAmount.slices).toEqual([
+      { key: "red-wave", label: "红波", value: 70 },
+      { key: "xingda", label: "星大", value: 30 }
+    ]);
+    expect(splitByOrderSegment.slices).toEqual([
+      { key: "xingda", label: "星大", value: 90 }
+    ]);
+    expect(buildOrderPieData([], "overview").slices).toEqual([]);
   });
 
   it("merges imported orders by id", function () {

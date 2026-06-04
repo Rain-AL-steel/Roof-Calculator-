@@ -248,6 +248,20 @@
               </div>
               <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
             </div>
+            <div class="trend-pie-card" aria-label="订单分类金额饼图">
+              <div class="trend-pie-head">
+                <div>
+                  <h3>分类金额</h3>
+                  <p id="trendPieSubtitle">瓦片、配件、钢铁材料占比</p>
+                </div>
+                <button type="button" class="trend-pie-toggle" id="trendPieTileToggle" aria-pressed="false" title="只显示瓦片数据">瓦</button>
+              </div>
+              <div class="trend-pie-body">
+                <svg id="orderPieChart" class="trend-pie-chart" viewBox="0 0 160 160" role="img" aria-label="订单分类金额饼图"></svg>
+                <div class="trend-pie-legend" id="orderPieLegend"></div>
+              </div>
+              <div class="empty-note trend-pie-empty" id="orderPieEmpty">暂无统计数据</div>
+            </div>
           </div>
         </div>
       </section>
@@ -299,10 +313,6 @@
         <div class="field">
           <label for="orderDate">订单日期</label>
           <input id="orderDate" type="date" />
-        </div>
-        <div class="field">
-          <label for="orderNo">订单编号</label>
-          <input id="orderNo" type="text" autocomplete="off" placeholder="留空自动生成" />
         </div>
         <div class="field">
           <label for="customerName">客户姓名</label>
@@ -495,7 +505,7 @@
         <div class="title-row">
           <div class="title-block">
             <h1>订单详细</h1>
-            <p>按日期、订单编号或客户名称查找订单。</p>
+            <p>按日期、客户名称或位置查找订单。</p>
           </div>
           <button type="button" class="btn btn-danger" id="clearAllOrders"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg><span>清空全部数据</span></button>
         </div>
@@ -505,12 +515,21 @@
             <input id="historyDateFilter" type="date" />
           </div>
           <div class="field">
-            <label for="historyOrderSearch">订单编号</label>
-            <input id="historyOrderSearch" type="search" autocomplete="off" placeholder="输入订单编号" />
-          </div>
-          <div class="field">
             <label for="historyCustomerSearch">客户名称</label>
             <input id="historyCustomerSearch" type="search" autocomplete="off" placeholder="输入客户名称" />
+          </div>
+          <div class="field">
+            <label for="historyAddressSearch">位置</label>
+            <input id="historyAddressSearch" type="search" autocomplete="off" placeholder="输入地址或位置" />
+          </div>
+          <div class="field">
+            <label for="historySortSelect">排序</label>
+            <select id="historySortSelect">
+              <option value="time-desc">时间排序：最新在前</option>
+              <option value="time-asc">时间排序：最早在前</option>
+              <option value="area-desc">面积排序：面积大到小</option>
+              <option value="area-asc">面积排序：面积小到大</option>
+            </select>
           </div>
           <button type="button" class="btn btn-neutral" id="resetHistoryFilters"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg><span>重置筛选</span></button>
         </div>
@@ -529,8 +548,8 @@
               <thead>
                 <tr>
                   <th>日期</th>
-                  <th>订单编号</th>
                   <th>客户</th>
+                  <th>位置</th>
                   <th>金额</th>
                   <th>面积</th>
                   <th>操作</th>

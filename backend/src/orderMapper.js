@@ -31,6 +31,12 @@ function toNullableNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function toNullableFiniteNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  var number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function toIso(value) {
   if (!value) return new Date().toISOString();
   var date = value instanceof Date ? value : new Date(value);
@@ -119,7 +125,17 @@ function hasUsefulLengthText(value) {
   return !Number.isFinite(numeric) || numeric > 0;
 }
 
-function normalizeMainRows(rows) {
+function resolveMainRowSegmentLength(row, fallbackSegmentLength) {
+  var source = row || {};
+  var segmentLength = toNullableFiniteNumber(source.segmentLength);
+  if (segmentLength !== null) return segmentLength;
+  segmentLength = toNullableFiniteNumber(source.tileSegmentLength);
+  if (segmentLength !== null) return segmentLength;
+  return fallbackSegmentLength;
+}
+
+function normalizeMainRows(rows, mainTileSegmentLength) {
+  var fallbackSegmentLength = toNullableFiniteNumber(mainTileSegmentLength);
   return (Array.isArray(rows) ? rows : []).map(function (row, index) {
     var source = row || {};
     return {
@@ -128,6 +144,7 @@ function normalizeMainRows(rows) {
       totalQty: toNumber(source.totalQty, 0),
       actual: toNumber(source.actual, 0),
       area: toNumber(source.area, 0),
+      segmentLength: resolveMainRowSegmentLength(source, fallbackSegmentLength),
       hasUsefulLengthText: hasUsefulLengthText(source.lengthsText),
       productText: compactText(source.name || source.productName || source.product || source.spec),
       amount: toNumber(source.amount, 0)
@@ -140,7 +157,8 @@ function normalizeMainRows(rows) {
       lengthsText: row.lengthsText,
       totalQty: row.totalQty,
       actual: row.actual,
-      area: row.area
+      area: row.area,
+      segmentLength: row.segmentLength
     };
   });
 }
@@ -182,6 +200,12 @@ export function createOrderNo(date) {
 function decimalToNumber(value) {
   if (value === null || value === undefined) return 0;
   return Number(value);
+}
+
+function decimalToNullableNumber(value) {
+  if (value === null || value === undefined) return null;
+  var number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function lineItemToFrontend(item) {
@@ -236,7 +260,8 @@ export function toFrontendOrder(order) {
           lengthsText: row.lengthsText || "",
           totalQty: decimalToNumber(row.totalQty),
           actual: decimalToNumber(row.actual),
-          area: decimalToNumber(row.area)
+          area: decimalToNumber(row.area),
+          segmentLength: decimalToNullableNumber(row.segmentLength)
         };
       }),
       accessories: lineItems.filter(function (item) { return item.type === "ACCESSORY"; }).map(lineItemToFrontend),
@@ -252,7 +277,7 @@ export function buildOrderPayload(input, options) {
   var items = source.items || {};
   var totals = source.totals || {};
   var orderDate = source.orderDate || settings.orderDate || new Date();
-  var mainRows = normalizeMainRows(items.mainRows || source.mainRows);
+  var mainRows = normalizeMainRows(items.mainRows || source.mainRows, items.mainTileSegmentLength);
   var accessories = normalizeLineItems(items.accessories || source.accessories, "ACCESSORY", false);
   var steels = normalizeLineItems(items.steels || source.steels, "STEEL", false);
   var otherTiles = normalizeLineItems(items.otherTiles || source.otherTiles, "OTHER_TILE", true);
