@@ -8,6 +8,7 @@ import { prisma as defaultPrisma } from "./prisma.js";
 import { createRequestMetrics, roundMetric, runOutsideRequestMetrics, runWithRequestMetrics } from "./requestContext.js";
 import { findUserForLogin, getJwtExpiresIn, getJwtSecret, signAuthToken, toAuthUser, verifyAuthToken, verifyPassword } from "./auth.js";
 import { buildOrderPayload, createOrderNo, getOrderInclude, toFrontendOrder } from "./orderMapper.js";
+import { evaluateCuttingAdviceWithDeepSeek } from "./deepseekClient.js";
 
 const DEFAULT_CORS_ORIGINS = [
   "http://127.0.0.1:5173",
@@ -112,6 +113,18 @@ function getOrderPayloadSummary(input) {
       otherTiles: getArrayCount(items.otherTiles || source.otherTiles)
     },
     totalsKeys: Object.keys(totals).slice(0, 20)
+  };
+}
+
+function getCuttingAdviceSummary(input) {
+  var source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  var recommendedPlan = source.recommendedPlan && typeof source.recommendedPlan === "object" && !Array.isArray(source.recommendedPlan) ? source.recommendedPlan : {};
+  return {
+    stockSegments: Number(source.stockSegments) || 60,
+    planCount: getArrayCount(source.plans),
+    recommendedBoardCount: Number(recommendedPlan.boardCount) || 0,
+    recommendedWasteSegments: Number(recommendedPlan.totalWasteSegments) || 0,
+    recommendedFullBoardCount: Number(recommendedPlan.fullBoardCount) || 0
   };
 }
 
@@ -636,6 +649,32 @@ export function createApp(options) {
     });
 
     res.json({ config: saved.value, source: "database" });
+  }));
+
+  app.use("/api/cutting-advice", createAuthMiddleware(authOptions));
+
+  app.post("/api/cutting-advice/evaluate", asyncHandler(async function (req, res) {
+    var input = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    req.safePayloadSummary = getCuttingAdviceSummary(input);
+    console.info("[api-request]", {
+      operation: "POST /api/cutting-advice/evaluate",
+      payload: req.safePayloadSummary
+    });
+
+    var result = await evaluateCuttingAdviceWithDeepSeek(input, {
+      fetch: options && options.deepseekFetch
+    });
+    if (!result.ok) {
+      res.json({
+        ok: false,
+        message: result.message || "AI评价暂不可用，本地裁板方案仍可使用"
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      evaluation: result.evaluation
+    });
   }));
 
   app.use("/api/orders", createAuthMiddleware(authOptions));

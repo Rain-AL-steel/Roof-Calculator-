@@ -24,6 +24,7 @@ import {
 import {
   clearApiAuth,
   deleteOrderMapImageFromApi,
+  evaluateCuttingAdviceFromApi,
   fetchConfigFromApi,
   fetchOrderMapImageBlobFromApi,
   getApiAuthToken,
@@ -734,6 +735,32 @@ describe("order service", function () {
     expect(error.status).toBe(400);
     expect(error.code).toBe("INVALID_CONFIG_PAYLOAD");
     expect(error.message).toBe("Config payload is invalid.");
+  });
+
+  it("requests DeepSeek cutting advice evaluation through the backend API", async function () {
+    var requestedUrl = "";
+    var requestedOptions = null;
+    useHttpApiRuntime(function (url, options) {
+      if (url === "/api/auth/login") {
+        return jsonResponse({ token: "cutting-token", tokenType: "Bearer" });
+      }
+      requestedUrl = url;
+      requestedOptions = options;
+      return jsonResponse({ ok: true, evaluation: { score: 8.7, label: "可用" } });
+    });
+
+    await loginToApi("admin", "secret");
+    var payload = await evaluateCuttingAdviceFromApi({
+      stockSegments: 60,
+      plans: [],
+      recommendedPlan: null
+    });
+
+    expect(requestedUrl).toBe("/api/cutting-advice/evaluate");
+    expect(requestedOptions.method).toBe("POST");
+    expect(requestedOptions.headers.Authorization).toBe("Bearer cutting-token");
+    expect(JSON.parse(requestedOptions.body).stockSegments).toBe(60);
+    expect(payload.evaluation).toEqual({ score: 8.7, label: "可用" });
   });
 
   it("uploads order map images through multipart API requests", async function () {

@@ -16,11 +16,11 @@ function authHeaders(extra) {
   }, extra || {});
 }
 
-function createTestApp(mock) {
-  return createApp({
+function createTestApp(mock, extraOptions) {
+  return createApp(Object.assign({
     prisma: mock.prisma,
     jwtSecret: TEST_JWT_SECRET
-  });
+  }, extraOptions || {}));
 }
 
 function listen(app) {
@@ -755,6 +755,167 @@ describe("backend order API", function () {
 
     expect(response.status).toBe(400);
     expect(body.code).toBe("INVALID_CONFIG_PAYLOAD");
+  });
+
+  it("falls back when DeepSeek cutting advice evaluation is not configured", async function () {
+    var previousKey = process.env.DEEPSEEK_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    try {
+      var response = await fetch(serverInfo.url + "/api/cutting-advice/evaluate", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          stockSegments: 60,
+          plans: [],
+          recommendedPlan: null
+        })
+      });
+      var body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.ok).toBe(false);
+      expect(body.message).toBe("AI评分暂不可用，本地裁板方案仍可使用");
+    } finally {
+      if (previousKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previousKey;
+    }
+  });
+
+  it("evaluates local cutting plans through DeepSeek without changing the plan", async function () {
+    var previousKey = process.env.DEEPSEEK_API_KEY;
+    var previousModel = process.env.DEEPSEEK_MODEL;
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    delete process.env.DEEPSEEK_MODEL;
+    var mock = createMockPrisma();
+    var fetchCalls = [];
+    var fakeDeepSeekFetch = async function (url, options) {
+      fetchCalls.push({ url: url, options: options });
+      return {
+        ok: true,
+        json: async function () {
+          return {
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    score: 8.8,
+                    label: "推荐",
+                    reasons: ["旧字段不应外显"],
+                    cautions: ["旧字段不应外显"]
+                  })
+                }
+              }
+            ]
+          };
+        }
+      };
+    };
+    var serverInfo = await listen(createTestApp(mock, { deepseekFetch: fakeDeepSeekFetch }));
+
+    try {
+      var recommendedPlan = {
+        title: "方案一：优先零剩料",
+        boardCount: 1,
+        totalWasteSegments: 0,
+        fullBoardCount: 1,
+        summaryText: "用原板 1 支，总剩料 0 节，满板 1 支。",
+        cuts: [
+          { description: "23节×2 + 14节×1", repeat: 1, wasteSegments: 0, usedSegments: 60 }
+        ]
+      };
+      var response = await fetch(serverInfo.url + "/api/cutting-advice/evaluate", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          stockSegments: 60,
+          plans: [recommendedPlan],
+          recommendedPlan: recommendedPlan
+        })
+      });
+      var body = await response.json();
+      var deepSeekBody = JSON.parse(fetchCalls[0].options.body);
+      var prompt = deepSeekBody.messages[1].content;
+
+      expect(response.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(body.evaluation).toEqual({ score: 8.8, label: "推荐" });
+      expect(fetchCalls).toHaveLength(1);
+      expect(fetchCalls[0].url).toBe("https://api.deepseek.com/chat/completions");
+      expect(fetchCalls[0].options.headers.Authorization).toBe("Bearer test-deepseek-key");
+      expect(deepSeekBody.model).toBe("deepseek-v4-flash");
+      expect(prompt).toContain("不能重新计算裁板方案");
+      expect(prompt).toContain("23节×2 + 14节×1");
+    } finally {
+      if (previousKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previousKey;
+      if (previousModel === undefined) delete process.env.DEEPSEEK_MODEL;
+      else process.env.DEEPSEEK_MODEL = previousModel;
+    }
+  });
+
+  it("uses the configured DeepSeek model when provided", async function () {
+    var previousKey = process.env.DEEPSEEK_API_KEY;
+    var previousModel = process.env.DEEPSEEK_MODEL;
+    process.env.DEEPSEEK_API_KEY = "test-deepseek-key";
+    process.env.DEEPSEEK_MODEL = "deepseek-custom-model";
+    var mock = createMockPrisma();
+    var requestedBody = null;
+    var fakeDeepSeekFetch = async function (url, options) {
+      requestedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async function () {
+          return {
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    score: 7.2,
+                    label: "可用"
+                  })
+                }
+              }
+            ]
+          };
+        }
+      };
+    };
+    var serverInfo = await listen(createTestApp(mock, { deepseekFetch: fakeDeepSeekFetch }));
+
+    try {
+      var recommendedPlan = {
+        title: "方案一",
+        boardCount: 1,
+        totalWasteSegments: 0,
+        fullBoardCount: 1,
+        summaryText: "用原板 1 支。",
+        cuts: [
+          { description: "20节×3", repeat: 1, wasteSegments: 0, usedSegments: 60 }
+        ]
+      };
+      var response = await fetch(serverInfo.url + "/api/cutting-advice/evaluate", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          stockSegments: 60,
+          plans: [recommendedPlan],
+          recommendedPlan: recommendedPlan
+        })
+      });
+      var body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(requestedBody.model).toBe("deepseek-custom-model");
+    } finally {
+      if (previousKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previousKey;
+      if (previousModel === undefined) delete process.env.DEEPSEEK_MODEL;
+      else process.env.DEEPSEEK_MODEL = previousModel;
+    }
   });
 
   it("rejects order map image API requests without a bearer token", async function () {

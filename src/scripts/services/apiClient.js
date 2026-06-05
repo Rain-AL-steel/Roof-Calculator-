@@ -296,3 +296,11 @@ export function deleteOrderMapImageFromApi(orderId) {
     timeoutMs: ORDER_DELETE_TIMEOUT_MS
   });
 }
+
+export function evaluateCuttingAdviceFromApi(payload) {
+  return apiRequest("/cutting-advice/evaluate", {
+    method: "POST",
+    timeoutMs: API_TIMEOUT_MS,
+    body: payload || {}
+  });
+}

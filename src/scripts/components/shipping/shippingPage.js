@@ -8,6 +8,8 @@ import {
   lengthToPreciseSegments,
   segmentCountToLength
 } from "../../calc.js";
+import { evaluateCuttingAdviceFromApi, isApiConfigured } from "../../services/apiClient.js";
+import { buildCuttingPlans, formatCuttingPlan } from "../../services/cuttingPlanner.js";
 import { buildPreferredReport } from "../../services/reportService.js";
 import { escapeHtml, formatMoney, formatNum, formatTrimFixed, parseNum } from "../../utils.js";
 
@@ -104,6 +106,16 @@ export function initShippingPage(options) {
   var defaultSegmentFact = document.getElementById("defaultSegmentFact");
   var fixedWidthDisplay = document.getElementById("fixedWidthDisplay");
   var reportLogoDataUrl = "";
+  var cuttingAdviceBtn = null;
+  var cuttingAdvicePanel = null;
+  var hasGeneratedCuttingAdvice = false;
+  var latestCuttingAdviceResult = null;
+  var selectedPlan = null;
+  var selectedPlanSignature = "";
+  var cuttingEvaluation = null;
+  var cuttingEvaluationStatus = "idle";
+  var cuttingEvaluationMessage = "";
+  var cuttingEvaluationRequestId = 0;
   var totals = {
     area: 0,
     main: 0,
@@ -584,6 +596,385 @@ export function initShippingPage(options) {
     });
   }
 
+  function getCurrentCuttingAdvice() {
+    return buildCuttingPlans({
+      stockSegments: 60,
+      pieces: getMergedMainRows()
+    });
+  }
+
+  function renderCuttingWarnings(warnings) {
+    if (!warnings || !warnings.length) return "";
+    return "<ul class='cutting-warning-list'>" + warnings.map(function (warning) {
+      return "<li>" + escapeHtml(warning) + "</li>";
+    }).join("") + "</ul>";
+  }
+
+  function displayCuttingValue(value) {
+    if (value === null || value === undefined) return "";
+    return String(value);
+  }
+
+  function getCuttingPlanSignature(plan) {
+    return JSON.stringify(compactCuttingPlan(plan));
+  }
+
+  function setSelectedCuttingPlan(plan) {
+    selectedPlan = plan || null;
+    selectedPlanSignature = plan ? getCuttingPlanSignature(plan) : "";
+  }
+
+  function getSelectedCuttingPlan(plans) {
+    var list = Array.isArray(plans) ? plans : [];
+    if (!list.length) return null;
+    if (selectedPlanSignature) {
+      var match = list.find(function (plan) {
+        return getCuttingPlanSignature(plan) === selectedPlanSignature;
+      });
+      if (match) return match;
+    }
+    return list[0];
+  }
+
+  function getCuttingScoreText(plan) {
+    var score = Number(plan && plan.score);
+    return Number.isFinite(score) ? formatTrimFixed(score, 1) : "";
+  }
+
+  function getCuttingLineText(cut) {
+    if (cut && cut.lineText) return String(cut.lineText);
+    var items = Array.isArray(cut && cut.items) ? cut.items : [];
+    var parts = [];
+    items.forEach(function (item) {
+      var qty = Math.max(1, Math.trunc(Number(item.qty) || 1));
+      if (qty <= 4) {
+        for (var index = 0; index < qty; index += 1) parts.push(String(item.segments));
+      } else {
+        parts.push(String(item.segments) + "×" + qty);
+      }
+    });
+    return (parts.length ? parts.join(" + ") : String(cut && cut.description || "")) + " = 剩" + displayCuttingValue(cut && cut.wasteSegments);
+  }
+
+  function getCuttingRoundRows(plan, maxRows) {
+    var rounds = Array.isArray(plan && plan.cuttingRounds) ? plan.cuttingRounds : [];
+    var limit = maxRows || 12;
+    if (rounds.length) {
+      var visibleRounds = rounds.slice(0, limit).map(function (round, index) {
+        return "第" + (index + 1) + "轮：" + (round.lineText || "");
+      });
+      if (rounds.length > limit) {
+        visibleRounds.push("还有 " + (rounds.length - limit) + " 轮未展开");
+      }
+      return visibleRounds;
+    }
+    var rows = [];
+    var source = Array.isArray(plan && plan.cuts) ? plan.cuts : [];
+    source.forEach(function (cut) {
+      var repeat = Math.max(1, Math.trunc(Number(cut.repeat) || 1));
+      var text = getCuttingLineText(cut);
+      if (repeat <= 3 && rows.length + repeat <= limit) {
+        for (var index = 0; index < repeat; index += 1) rows.push("第" + (rows.length + 1) + "轮：" + text);
+        return;
+      }
+      rows.push("第" + (rows.length + 1) + "轮：" + text + (repeat > 1 ? " × " + repeat + "支" : ""));
+    });
+    if (rows.length > limit) {
+      return rows.slice(0, limit).concat(["还有 " + (rows.length - limit) + " 轮未展开"]);
+    }
+    return rows;
+  }
+
+  function renderCuttingRoundList(plan) {
+    var rows = getCuttingRoundRows(plan, 12);
+    if (!rows.length) return "";
+    rows = rows.map(function (line) {
+      return "<li>" + escapeHtml(line) + "</li>";
+    }).join("");
+    return "<div class='cutting-rounds'><strong>裁切安排</strong><ol class='cutting-cut-list'>" + rows + "</ol></div>";
+  }
+
+  function renderCuttingWorkInfo(plan) {
+    return "<div class='cutting-work-info'>" +
+      "<span>需要原板：" + escapeHtml(displayCuttingValue(plan.boardCount)) + "支</span>" +
+      "<span>预计裁切轮数：" + escapeHtml(displayCuttingValue(plan.estimatedCutRounds)) + "轮</span>" +
+      "</div>";
+  }
+
+  function renderCuttingPlanCard(plan, index) {
+    var signature = getCuttingPlanSignature(plan);
+    var isSelected = selectedPlanSignature ? signature === selectedPlanSignature : index === 0;
+    var activeClass = isSelected ? " is-selected" : "";
+    var scoreText = getCuttingScoreText(plan);
+    return "<article class='cutting-plan-card" + activeClass + "'>" +
+      "<div class='cutting-plan-title'><div><h3>" + escapeHtml(plan.title || ("方案 " + (index + 1))) + "</h3>" +
+      (plan.strategyLabel ? "<small>" + escapeHtml(plan.strategyLabel) + "</small>" : "") + "</div>" +
+      (isSelected ? "<span>当前选中</span>" : "") + "</div>" +
+      (scoreText ? "<p class='cutting-score'>评分：" + escapeHtml(scoreText) + "分</p>" : "") +
+      renderCuttingWorkInfo(plan) +
+      renderCuttingRoundList(plan) +
+      "<button type='button' class='btn btn-soft cutting-use-plan' data-cutting-plan-index='" + index + "'" + (isSelected ? " disabled" : "") + ">" + (isSelected ? "已使用此方案" : "使用此方案") + "</button>" +
+      "</article>";
+  }
+
+  function compactCuttingEvaluationText(value, maxLength) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength || 500);
+  }
+
+  function looksLikeRawCuttingEvaluationJson(value) {
+    var text = String(value || "").trim();
+    return /^```/.test(text) ||
+      /^[\[{"]/.test(text) ||
+      /["']score["']\s*:/.test(text) ||
+      /["']label["']\s*:/.test(text) ||
+      /["']summary["']\s*:/.test(text) ||
+      /["']reasons["']\s*:/.test(text) ||
+      /["']cautions["']\s*:/.test(text) ||
+      /\\"score\\"\s*:/.test(text) ||
+      /\\"label\\"\s*:/.test(text) ||
+      /\\"summary\\"\s*:/.test(text) ||
+      /\\"reasons\\"\s*:/.test(text) ||
+      /\\"cautions\\"\s*:/.test(text);
+  }
+
+  function parseCuttingEvaluationJson(value, depth) {
+    if (depth > 4) return null;
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    if (typeof value !== "string") return null;
+    var text = String(value || "").trim();
+    if (!text) return null;
+    try {
+      var parsed = JSON.parse(text);
+      var nested = parseCuttingEvaluationJson(parsed, depth + 1);
+      if (nested) return nested;
+    } catch (error) {
+      // Fall through to fenced/raw object extraction.
+    }
+    var fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
+    if (fenced) {
+      var fencedParsed = parseCuttingEvaluationJson(fenced[1], depth + 1);
+      if (fencedParsed) return fencedParsed;
+    }
+    var objectMatch = /\{[\s\S]*\}/.exec(text);
+    if (objectMatch) {
+      var objectParsed = parseCuttingEvaluationJson(objectMatch[0], depth + 1);
+      if (objectParsed) return objectParsed;
+    }
+    return null;
+  }
+
+  function normalizeCuttingAiScore(value) {
+    var raw = value;
+    if (typeof raw === "string") {
+      var match = /-?\d+(?:\.\d+)?/.exec(raw);
+      raw = match ? match[0] : raw;
+    }
+    var score = Number(raw);
+    if (!Number.isFinite(score)) return null;
+    return Math.round(Math.min(10, Math.max(1, score)) * 10) / 10;
+  }
+
+  function deriveCuttingAiLabel(score) {
+    if (!Number.isFinite(score)) return "";
+    if (score >= 9) return "推荐";
+    if (score >= 7) return "可用";
+    if (score >= 5) return "一般";
+    return "不建议";
+  }
+
+  function normalizeCuttingAiLabel(value, score) {
+    var text = compactCuttingEvaluationText(value, 20);
+    var labels = ["推荐", "可用", "一般", "不建议"];
+    var match = labels.find(function (label) {
+      return text.indexOf(label) !== -1;
+    });
+    return match || deriveCuttingAiLabel(score);
+  }
+
+  function normalizeCuttingEvaluation(evaluation) {
+    var source = parseCuttingEvaluationJson(evaluation, 0);
+    if (!source && typeof evaluation === "string" && !looksLikeRawCuttingEvaluationJson(evaluation)) {
+      var textScore = normalizeCuttingAiScore(evaluation);
+      return textScore === null ? null : {
+        score: textScore,
+        label: normalizeCuttingAiLabel(evaluation, textScore)
+      };
+    }
+    if (!source) return null;
+    var nestedScore = parseCuttingEvaluationJson(source.score, 0);
+    if (nestedScore) return normalizeCuttingEvaluation(nestedScore);
+    var score = normalizeCuttingAiScore(source.score);
+    if (score === null) score = normalizeCuttingAiScore(source.aiScore);
+    if (score === null && /评分|score/i.test(String(source.text || ""))) {
+      score = normalizeCuttingAiScore(source.text);
+    }
+    if (score === null) return null;
+    return {
+      score: score,
+      label: normalizeCuttingAiLabel(source.label || source.tag || source.summary || source.text, score)
+    };
+  }
+
+  function renderCuttingEvaluation() {
+    if (cuttingEvaluationStatus === "loading") {
+      return "<details class='cutting-ai-panel is-loading'><summary>AI参考评分</summary><p>正在生成 AI 评分...</p></details>";
+    }
+    if (cuttingEvaluationStatus === "error") {
+      return "<details class='cutting-ai-panel is-muted'><summary>AI参考评分</summary><p>" + escapeHtml(cuttingEvaluationMessage || "AI评分暂不可用，已显示本地裁板方案。") + "</p></details>";
+    }
+    if (cuttingEvaluationStatus !== "success" || !cuttingEvaluation) return "";
+    return "<details class='cutting-ai-panel'><summary>AI参考评分</summary>" +
+      "<p class='cutting-ai-score'><span>AI参考评分：" + escapeHtml(formatTrimFixed(cuttingEvaluation.score, 1)) + "分</span><span>标签：" + escapeHtml(cuttingEvaluation.label) + "</span></p>" +
+      "</details>";
+  }
+
+  function renderCuttingAdvice(result) {
+    if (!cuttingAdvicePanel) return;
+    var plans = result && Array.isArray(result.plans) ? result.plans : [];
+    var warnings = result && Array.isArray(result.warnings) ? result.warnings : [];
+    cuttingAdvicePanel.hidden = false;
+    if (!plans.length) {
+      cuttingAdvicePanel.innerHTML =
+        "<div class='cutting-advice-head'><div><h3>裁板建议（60节原板）</h3><p>请先填写主瓦长度和数量后再生成裁板建议</p></div></div>" +
+        renderCuttingWarnings(warnings);
+      return;
+    }
+    var activePlan = getSelectedCuttingPlan(plans);
+    setSelectedCuttingPlan(activePlan);
+    cuttingAdvicePanel.innerHTML =
+      "<div class='cutting-advice-head'><div><h3>裁板建议（60节原板）</h3><p>方案按评分排序，可选择打印使用的方案。</p></div></div>" +
+      renderCuttingWarnings(warnings) +
+      "<div class='cutting-plan-grid'>" + plans.map(renderCuttingPlanCard).join("") + "</div>" +
+      renderCuttingEvaluation();
+  }
+
+  function compactCuttingCut(cut) {
+    return {
+      description: String(cut && cut.description || "").trim(),
+      repeat: Number(cut && cut.repeat) || 1,
+      wasteSegments: Number(cut && cut.wasteSegments) || 0,
+      usedSegments: Number(cut && cut.usedSegments) || 0
+    };
+  }
+
+  function compactCuttingPlan(plan) {
+    return {
+      title: String(plan && plan.title || "").trim(),
+      boardCount: Number(plan && plan.boardCount) || 0,
+      totalWasteSegments: Number(plan && plan.totalWasteSegments) || 0,
+      fullBoardCount: Number(plan && plan.fullBoardCount) || 0,
+      summaryText: String(plan && plan.summaryText || "").trim(),
+      cuts: (Array.isArray(plan && plan.cuts) ? plan.cuts : []).slice(0, 8).map(compactCuttingCut)
+    };
+  }
+
+  function buildCuttingEvaluationPayload(result) {
+    var plans = result && Array.isArray(result.plans) ? result.plans : [];
+    var recommendedPlan = plans[0] ? compactCuttingPlan(plans[0]) : null;
+    return {
+      stockSegments: result && result.stockSegments ? result.stockSegments : 60,
+      plans: recommendedPlan ? [recommendedPlan] : [],
+      recommendedPlan: recommendedPlan
+    };
+  }
+
+  function applyCuttingEvaluationFallback(message) {
+    cuttingEvaluationStatus = "error";
+    cuttingEvaluation = null;
+    cuttingEvaluationMessage = message || "AI评分暂不可用，已显示本地裁板方案。";
+    renderCuttingAdvice(latestCuttingAdviceResult);
+  }
+
+  function requestCuttingEvaluation(result) {
+    var plans = result && Array.isArray(result.plans) ? result.plans : [];
+    if (!plans.length) return;
+    cuttingEvaluationRequestId += 1;
+    var requestId = cuttingEvaluationRequestId;
+    cuttingEvaluationStatus = "loading";
+    cuttingEvaluation = null;
+    cuttingEvaluationMessage = "";
+    renderCuttingAdvice(result);
+
+    if (!isApiConfigured()) {
+      applyCuttingEvaluationFallback("AI评分暂不可用，已显示本地裁板方案。");
+      return;
+    }
+
+    evaluateCuttingAdviceFromApi(buildCuttingEvaluationPayload(result)).then(function (payload) {
+      if (requestId !== cuttingEvaluationRequestId) return;
+      var normalizedEvaluation = payload && payload.ok ? normalizeCuttingEvaluation(payload.evaluation) : null;
+      if (normalizedEvaluation) {
+        cuttingEvaluationStatus = "success";
+        cuttingEvaluation = normalizedEvaluation;
+        cuttingEvaluationMessage = "";
+      } else {
+        cuttingEvaluationStatus = "error";
+        cuttingEvaluation = null;
+        cuttingEvaluationMessage = payload && payload.message ? payload.message : "AI评分暂不可用，已显示本地裁板方案。";
+      }
+      renderCuttingAdvice(latestCuttingAdviceResult);
+    }).catch(function () {
+      if (requestId !== cuttingEvaluationRequestId) return;
+      applyCuttingEvaluationFallback("AI评分暂不可用，已显示本地裁板方案。");
+    });
+  }
+
+  function handleGenerateCuttingAdvice() {
+    recalcAll();
+    var result = getCurrentCuttingAdvice();
+    latestCuttingAdviceResult = result;
+    hasGeneratedCuttingAdvice = true;
+    setSelectedCuttingPlan(result && result.plans && result.plans[0] ? result.plans[0] : null);
+    cuttingEvaluation = null;
+    cuttingEvaluationStatus = "idle";
+    cuttingEvaluationMessage = "";
+    renderCuttingAdvice(result);
+    requestCuttingEvaluation(result);
+  }
+
+  function setupCuttingAdviceUi() {
+    if (cuttingAdviceBtn || !addMainRowBtn || !rowsEl) return;
+    cuttingAdviceBtn = document.createElement("button");
+    cuttingAdviceBtn.type = "button";
+    cuttingAdviceBtn.className = "btn btn-soft cutting-advice-btn";
+    cuttingAdviceBtn.innerHTML = iconSvg("layers") + "<span>生成裁板建议</span>";
+    addMainRowBtn.insertAdjacentElement("beforebegin", cuttingAdviceBtn);
+
+    cuttingAdvicePanel = document.createElement("section");
+    cuttingAdvicePanel.className = "cutting-advice-panel";
+    cuttingAdvicePanel.hidden = true;
+    var emptyNote = document.querySelector("#mainPanel .empty-note");
+    if (emptyNote) {
+      emptyNote.insertAdjacentElement("afterend", cuttingAdvicePanel);
+    } else {
+      rowsEl.insertAdjacentElement("afterend", cuttingAdvicePanel);
+    }
+    cuttingAdviceBtn.addEventListener("click", handleGenerateCuttingAdvice);
+    cuttingAdvicePanel.addEventListener("click", function (event) {
+      var target = event.target && event.target.closest ? event.target.closest("[data-cutting-plan-index]") : null;
+      if (!target || !latestCuttingAdviceResult || !Array.isArray(latestCuttingAdviceResult.plans)) return;
+      var index = Number(target.getAttribute("data-cutting-plan-index"));
+      var nextPlan = latestCuttingAdviceResult.plans[index];
+      if (!nextPlan) return;
+      setSelectedCuttingPlan(nextPlan);
+      renderCuttingAdvice(latestCuttingAdviceResult);
+    });
+  }
+
+  function getPrintableCuttingAdvice() {
+    if (!hasGeneratedCuttingAdvice) return null;
+    var result = getCurrentCuttingAdvice();
+    var plan = result && Array.isArray(result.plans) ? getSelectedCuttingPlan(result.plans) : null;
+    if (!plan) return null;
+    return {
+      stockSegments: result.stockSegments,
+      selectedPlan: plan,
+      recommendedPlan: plan,
+      summaryText: formatCuttingPlan(plan),
+      warnings: result.warnings || []
+    };
+  }
+
   function openPrintWindow(html) {
     var reportWindow = window.open("", "_blank");
     if (!reportWindow) {
@@ -618,6 +1009,8 @@ export function initShippingPage(options) {
       logoDataUrl: reportLogoDataUrl
     };
     if (Number.isFinite(mainTileSegmentLength)) snapshot.mainTileSegmentLength = mainTileSegmentLength;
+    var cuttingAdvice = getPrintableCuttingAdvice();
+    if (cuttingAdvice) snapshot.cuttingAdvice = cuttingAdvice;
     return snapshot;
   }
 
@@ -704,6 +1097,8 @@ export function initShippingPage(options) {
       switchPanel(button.getAttribute("data-target"));
     });
   });
+
+  setupCuttingAdviceUi();
 
   addMainRowBtn.addEventListener("click", function () {
     rowsEl.appendChild(createMainRow());

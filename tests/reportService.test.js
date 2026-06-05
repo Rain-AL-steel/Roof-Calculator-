@@ -50,6 +50,142 @@ describe("report service", function () {
     expect(report.html).not.toContain("备注：");
   });
 
+  it("prints cutting advice only when a recommendation is provided", function () {
+    var plainReport = buildPreferredReport(makeSnapshot(), cloneConfig());
+    var report = buildPreferredReport(makeSnapshot({
+      cuttingAdvice: {
+        stockSegments: 60,
+        selectedPlan: {
+          title: "方案一（9.8分）",
+          stockSegments: 60,
+          boardCount: 1,
+          score: 9.8,
+          cutPieceCount: 3,
+          estimatedCutRounds: 1,
+          cuttingRounds: [
+            { pieces: [20, 20, 20], wasteSegments: 0, lineText: "20 + 20 + 20，剩0" }
+          ],
+          cuts: [
+            { lineText: "20 + 20 + 20 = 剩0", repeat: 1, wasteSegments: 0 }
+          ]
+        },
+        evaluation: {
+          summary: "推荐使用方案一，零剩料且切法清楚。",
+          reasons: ["零剩料，材料利用率最高"],
+          cautions: ["裁切前复核数量"]
+        }
+      }
+    }), cloneConfig());
+
+    expect(plainReport.html).not.toContain("裁板方案");
+    expect(report.html).toContain("裁板方案");
+    expect(report.html).toContain(".cutting-advice{margin-top:1cm");
+    expect(report.html).toContain("grid-template-columns:repeat(auto-fit,minmax(34mm,1fr))");
+    expect(report.html).toContain("grid-template-columns:repeat(auto-fit,minmax(32mm,1fr))");
+    expect(report.html).not.toContain(".cutting-round-grid{display:grid;grid-template-columns:repeat(3");
+    expect(report.html).toContain("方案一｜评分 9.8分｜需要原板 1支｜预计裁切 1轮");
+    expect(report.html).toContain("class='cutting-round-grid'");
+    expect(report.html).toContain("<strong>第1轮</strong><span>20 + 20 + 20</span><em>剩料 0节</em>");
+    expect(report.html).not.toContain("cutting-round-table");
+    expect((report.html.match(/9\.8分/g) || []).length).toBe(1);
+    expect(report.html).not.toContain("需要裁片");
+    expect(report.html).not.toContain("AI参考评分");
+    expect(report.html).not.toContain("零剩料，材料利用率最高");
+    expect(report.html.indexOf("class='sign'")).toBeLessThan(report.html.indexOf("class='cutting-advice'"));
+  });
+
+  it("does not print AI evaluation even when it contains encoded JSON", function () {
+    var rawJson = "{\"summary\":\"推荐使用方案一。\",\"reasons\":[\"零剩料\"],\"cautions\":[\"复核数量\"]}";
+    var report = buildPreferredReport(makeSnapshot({
+      cuttingAdvice: {
+        stockSegments: 60,
+        selectedPlan: {
+          title: "方案一（9.5分）",
+          boardCount: 1,
+          score: 9.5,
+          cutPieceCount: 3,
+          estimatedCutRounds: 1,
+          cuttingRounds: [
+            { pieces: [20, 20, 20], wasteSegments: 0, lineText: "20 + 20 + 20，剩0" }
+          ],
+          cuts: [
+            { lineText: "20 + 20 + 20 = 剩0", repeat: 1, wasteSegments: 0 }
+          ]
+        },
+        evaluation: {
+          summary: rawJson,
+          reasons: [],
+          cautions: []
+        }
+      }
+    }), cloneConfig());
+
+    expect(report.html).toContain("裁板方案");
+    expect(report.html).toContain("<strong>第1轮</strong><span>20 + 20 + 20</span><em>剩料 0节</em>");
+    expect(report.html).not.toContain("需要裁片");
+    expect(report.html).not.toContain("推荐使用方案一。");
+    expect(report.html).not.toContain("复核数量");
+    expect(report.html).not.toContain(rawJson);
+  });
+
+  it("prints only the selected cutting plan even when alternates exist", function () {
+    var report = buildPreferredReport(makeSnapshot({
+      cuttingAdvice: {
+        stockSegments: 60,
+        selectedPlan: {
+          title: "方案二（8.4分）",
+          boardCount: 2,
+          score: 8.4,
+          cutPieceCount: 5,
+          estimatedCutRounds: 5,
+          cuttingRounds: [
+            { pieces: [35, 20], wasteSegments: 5, lineText: "35 + 20，剩5" },
+            { pieces: [35, 20], wasteSegments: 5, lineText: "35 + 20，剩5" },
+            { pieces: [32], wasteSegments: 28, lineText: "32，剩28" },
+            { pieces: [24, 24], wasteSegments: 12, lineText: "24 + 24，剩12" },
+            { pieces: [18, 18, 18], wasteSegments: 6, lineText: "18 + 18 + 18，剩6" }
+          ],
+          cuts: [
+            { lineText: "35 + 20 = 剩5", repeat: 2, wasteSegments: 5 }
+          ]
+        },
+        recommendedPlan: {
+          title: "方案一（9.8分）",
+          boardCount: 1,
+          score: 9.8,
+          cutPieceCount: 2,
+          estimatedCutRounds: 1,
+          cuttingRounds: [
+            { pieces: [35, 25], wasteSegments: 0, lineText: "35 + 25，剩0" }
+          ],
+          cuts: [
+            { lineText: "35 + 25 = 剩0", repeat: 1, wasteSegments: 0 }
+          ]
+        },
+        plans: [
+          {
+            title: "方案二（8.4分）",
+            cuts: [
+              { lineText: "35 + 20 = 剩5", repeat: 2, wasteSegments: 5 }
+            ]
+          }
+        ]
+      }
+    }), cloneConfig());
+
+    expect(report.html).not.toContain("方案二（8.4分）");
+    expect(report.html).toContain("方案二｜评分 8.4分｜需要原板 2支｜预计裁切 5轮");
+    expect(report.html).toContain("<strong>第1轮</strong><span>35 + 20</span><em>剩料 5节</em>");
+    expect(report.html).toContain("<strong>第2轮</strong><span>35 + 20</span><em>剩料 5节</em>");
+    expect(report.html).toContain("<strong>第3轮</strong><span>32</span><em>剩料 28节</em>");
+    expect(report.html).toContain("<strong>第4轮</strong><span>24 + 24</span><em>剩料 12节</em>");
+    expect(report.html).toContain("<strong>第5轮</strong><span>18 + 18 + 18</span><em>剩料 6节</em>");
+    expect((report.html.match(/class='cutting-round-card'/g) || []).length).toBe(5);
+    expect(report.html).not.toContain("需要裁片");
+    expect(report.html).not.toContain("方案一（9.8分）");
+    expect(report.html).not.toContain("35 + 25，剩0");
+  });
+
   it("keeps shared order fields in accessory-only reports", function () {
     var report = buildPreferredReport(makeSnapshot({
       mainRows: [],

@@ -126,6 +126,13 @@ var activeTrendTilePieView = "brand";
 var activeDashboardMonth = getMonthKey(new Date());
 var activeTrendPointKey = "";
 var trendPointDetailsByKey = {};
+var trendYearMobilePicker = null;
+var trendMonthMobilePicker = null;
+var trendYearPickerScrollTimer = 0;
+var trendMonthPickerScrollTimer = 0;
+var trendPickerResizeTimer = 0;
+var trendPickerSyncing = false;
+var trendYearPickerValues = [];
 var orderMapState = {
   token: 0,
   AMap: null,
@@ -222,6 +229,212 @@ function normalizeTrendMonthValue(value, fallback) {
     if (fallbackNumber >= 1 && fallbackNumber <= 12) return fallbackNumber;
   }
   return new Date().getMonth() + 1;
+}
+
+function getTrendYearPickerValues(orders) {
+  var currentYear = new Date().getFullYear();
+  var yearSet = {};
+  var list = Array.isArray(orders) ? orders : [];
+  yearSet[currentYear] = true;
+  yearSet[activeTrendYear] = true;
+  list.forEach(function (order) {
+    var year = Number(String(order && order.orderDate || "").slice(0, 4));
+    if (!Number.isFinite(year) || year < 1900 || year > 9999) return;
+    yearSet[Math.trunc(year)] = true;
+  });
+  var years = Object.keys(yearSet).map(function (year) {
+    return Number(year);
+  }).filter(function (year) {
+    return Number.isFinite(year);
+  }).sort(function (a, b) {
+    return a - b;
+  });
+  var start = years.length ? years[0] - 6 : currentYear - 6;
+  var end = years.length ? years[years.length - 1] + 6 : currentYear + 6;
+  var values = [];
+  var yearValue = start;
+  for (; yearValue <= end; yearValue += 1) values.push(yearValue);
+  return values;
+}
+
+function createTrendPickerItem(value, label, dataName) {
+  var item = document.createElement("button");
+  item.type = "button";
+  item.className = "trend-picker-item";
+  item.textContent = label;
+  item.setAttribute(dataName, String(value));
+  item.setAttribute("aria-selected", "false");
+  return item;
+}
+
+function ensureTrendMobilePickers() {
+  if (trendYearControl && !trendYearMobilePicker) {
+    trendYearMobilePicker = document.createElement("div");
+    trendYearMobilePicker.className = "trend-mobile-picker trend-year-picker";
+    trendYearMobilePicker.setAttribute("role", "listbox");
+    trendYearMobilePicker.setAttribute("aria-label", "\u6eda\u52a8\u9009\u62e9\u5e74\u4efd");
+    trendYearControl.appendChild(trendYearMobilePicker);
+    trendYearMobilePicker.addEventListener("click", function (event) {
+      var item = event.target.closest("[data-trend-picker-year]");
+      if (!item) return;
+      setTrendYearFromPicker(Number(item.getAttribute("data-trend-picker-year")));
+    });
+    trendYearMobilePicker.addEventListener("scroll", function () {
+      scheduleTrendPickerSelection("year");
+    }, { passive: true });
+  }
+  if (trendMonthControl && !trendMonthMobilePicker) {
+    trendMonthMobilePicker = document.createElement("div");
+    trendMonthMobilePicker.className = "trend-mobile-picker trend-month-picker";
+    trendMonthMobilePicker.setAttribute("role", "listbox");
+    trendMonthMobilePicker.setAttribute("aria-label", "\u6eda\u52a8\u9009\u62e9\u6708\u4efd");
+    trendMonthControl.appendChild(trendMonthMobilePicker);
+    trendMonthMobilePicker.addEventListener("click", function (event) {
+      var item = event.target.closest("[data-trend-picker-month]");
+      if (!item) return;
+      setTrendMonthFromPicker(Number(item.getAttribute("data-trend-picker-month")));
+    });
+    trendMonthMobilePicker.addEventListener("scroll", function () {
+      scheduleTrendPickerSelection("month");
+    }, { passive: true });
+  }
+}
+
+function vibrateTrendPicker() {
+  if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+  try {
+    navigator.vibrate(8);
+  } catch (error) {
+    // Best effort only.
+  }
+}
+
+function getCenteredTrendPickerItem(picker, selector) {
+  if (!picker) return null;
+  var items = Array.prototype.slice.call(picker.querySelectorAll(selector));
+  if (!items.length) return null;
+  var pickerRect = picker.getBoundingClientRect();
+  var center = pickerRect.left + pickerRect.width / 2;
+  var closest = items[0];
+  var closestDistance = Infinity;
+  items.forEach(function (item) {
+    var itemRect = item.getBoundingClientRect();
+    var itemCenter = itemRect.left + itemRect.width / 2;
+    var distance = Math.abs(itemCenter - center);
+    if (distance < closestDistance) {
+      closest = item;
+      closestDistance = distance;
+    }
+  });
+  return closest;
+}
+
+function scheduleTrendPickerSelection(type) {
+  if (trendPickerSyncing) return;
+  var isYear = type === "year";
+  var picker = isYear ? trendYearMobilePicker : trendMonthMobilePicker;
+  var selector = isYear ? "[data-trend-picker-year]" : "[data-trend-picker-month]";
+  var callback = function () {
+    if (trendPickerSyncing) return;
+    var item = getCenteredTrendPickerItem(picker, selector);
+    if (!item) return;
+    if (isYear) {
+      setTrendYearFromPicker(Number(item.getAttribute("data-trend-picker-year")));
+    } else {
+      setTrendMonthFromPicker(Number(item.getAttribute("data-trend-picker-month")));
+    }
+  };
+  if (isYear) {
+    window.clearTimeout(trendYearPickerScrollTimer);
+    trendYearPickerScrollTimer = window.setTimeout(callback, 140);
+  } else {
+    window.clearTimeout(trendMonthPickerScrollTimer);
+    trendMonthPickerScrollTimer = window.setTimeout(callback, 140);
+  }
+}
+
+function centerTrendPickerItem(picker, item) {
+  if (!picker || !item || picker.clientWidth <= 0) return;
+  var nextLeft = item.offsetLeft - (picker.clientWidth - item.offsetWidth) / 2;
+  picker.scrollLeft = Math.max(0, nextLeft);
+}
+
+function syncTrendPickerActiveItem(picker, selector, activeValue, valueAttribute) {
+  if (!picker) return;
+  var activeItem = null;
+  Array.prototype.slice.call(picker.querySelectorAll(selector)).forEach(function (item) {
+    var isActive = Number(item.getAttribute(valueAttribute)) === activeValue;
+    item.classList.toggle("is-active", isActive);
+    item.setAttribute("aria-selected", isActive ? "true" : "false");
+    if (isActive) activeItem = item;
+  });
+  trendPickerSyncing = true;
+  centerTrendPickerItem(picker, activeItem);
+  window.setTimeout(function () {
+    trendPickerSyncing = false;
+  }, 80);
+}
+
+function syncTrendYearMobilePicker() {
+  if (!trendYearMobilePicker) return;
+  if (!trendYearPickerValues.length) {
+    trendYearPickerValues = getTrendYearPickerValues();
+  }
+  var rangeKey = trendYearPickerValues.join(":");
+  if (trendYearMobilePicker.getAttribute("data-range") !== rangeKey) {
+    var fragment = document.createDocumentFragment();
+    trendYearPickerValues.forEach(function (year) {
+      fragment.appendChild(createTrendPickerItem(year, String(year), "data-trend-picker-year"));
+    });
+    trendYearMobilePicker.replaceChildren(fragment);
+    trendYearMobilePicker.setAttribute("data-range", rangeKey);
+  }
+  syncTrendPickerActiveItem(trendYearMobilePicker, "[data-trend-picker-year]", activeTrendYear, "data-trend-picker-year");
+}
+
+function syncTrendMonthMobilePicker() {
+  if (!trendMonthMobilePicker) return;
+  if (trendMonthMobilePicker.children.length !== 12) {
+    var fragment = document.createDocumentFragment();
+    var month = 1;
+    for (; month <= 12; month += 1) {
+      fragment.appendChild(createTrendPickerItem(month, String(month) + "\u6708", "data-trend-picker-month"));
+    }
+    trendMonthMobilePicker.replaceChildren(fragment);
+  }
+  syncTrendPickerActiveItem(trendMonthMobilePicker, "[data-trend-picker-month]", activeTrendMonth, "data-trend-picker-month");
+}
+
+function syncTrendMobilePickers(orders) {
+  ensureTrendMobilePickers();
+  if (Array.isArray(orders)) trendYearPickerValues = getTrendYearPickerValues(orders);
+  syncTrendYearMobilePicker();
+  syncTrendMonthMobilePicker();
+}
+
+function setTrendYearFromPicker(year) {
+  if (!Number.isFinite(year)) return;
+  year = Math.trunc(year);
+  if (year === activeTrendYear) {
+    syncTrendMobilePickers();
+    return;
+  }
+  activeTrendYear = year;
+  hideTrendPointDetail();
+  vibrateTrendPicker();
+  renderDashboard();
+}
+
+function setTrendMonthFromPicker(month) {
+  var nextMonth = normalizeTrendMonthValue(month, activeTrendMonth);
+  if (nextMonth === activeTrendMonth) {
+    syncTrendMobilePickers();
+    return;
+  }
+  activeTrendMonth = nextMonth;
+  hideTrendPointDetail();
+  vibrateTrendPicker();
+  renderDashboard();
 }
 
 function getTrendMonthFromKey(key) {
@@ -380,10 +593,40 @@ function renderTrendChart(trend, ordersByKey) {
     labels;
 }
 
-var PIE_COLORS = ["#2f7f6f", "#c65a3a", "#6f5bb8", "#94743f"];
+var PIE_FALLBACK_COLORS = ["#18745f", "#b9463e", "#4f5f9f", "#b7791f", "#64748b"];
+var TILE_COLOR_PIE_COLORS = {
+  "\u7070\u8272": "#7a858d",
+  "\u67a3\u7ea2": "#8f1d3a",
+  "\u7816\u7ea2": "#c65a3a",
+  "\u672a\u533a\u5206": "#64748b"
+};
+var TILE_BRAND_PIE_COLORS = {
+  "\u7ea2\u6ce2": "#18745f",
+  "\u661f\u5927": "#4f5f9f",
+  "\u672a\u533a\u5206": "#64748b"
+};
 
-function getPieSliceColor(index) {
-  return PIE_COLORS[index % PIE_COLORS.length];
+function normalizePieColorLabel(label) {
+  return String(label || "").trim();
+}
+
+function getTileColorLabelFromSlice(slice) {
+  var label = normalizePieColorLabel(slice && slice.label);
+  if (activeTrendTilePieView === "combo") {
+    var parts = label.split("-");
+    label = normalizePieColorLabel(parts[parts.length - 1]);
+  }
+  return label;
+}
+
+function getPieSliceColor(slice, index) {
+  if (activeTrendPieMode === "tile") {
+    if (activeTrendTilePieView === "color" || activeTrendTilePieView === "combo") {
+      return TILE_COLOR_PIE_COLORS[getTileColorLabelFromSlice(slice)] || TILE_COLOR_PIE_COLORS["\u672a\u533a\u5206"];
+    }
+    return TILE_BRAND_PIE_COLORS[normalizePieColorLabel(slice && slice.label)] || PIE_FALLBACK_COLORS[index % PIE_FALLBACK_COLORS.length];
+  }
+  return PIE_FALLBACK_COLORS[index % PIE_FALLBACK_COLORS.length];
 }
 
 function renderPieSvg(data) {
@@ -394,7 +637,7 @@ function renderPieSvg(data) {
     var length = data.total > 0 ? slice.value / data.total * circumference : 0;
     var dashOffset = -offset;
     offset += length;
-    return "<circle class='pie-slice' cx='80' cy='80' r='" + radius + "' fill='none' stroke='" + getPieSliceColor(index) + "' stroke-width='26' stroke-dasharray='" + length.toFixed(2) + " " + circumference.toFixed(2) + "' stroke-dashoffset='" + dashOffset.toFixed(2) + "' transform='rotate(-90 80 80)'><title>" + escapeHtml(slice.label) + "：" + formatMoney(slice.value) + " 元</title></circle>";
+    return "<circle class='pie-slice' cx='80' cy='80' r='" + radius + "' fill='none' stroke='" + getPieSliceColor(slice, index) + "' stroke-width='26' stroke-dasharray='" + length.toFixed(2) + " " + circumference.toFixed(2) + "' stroke-dashoffset='" + dashOffset.toFixed(2) + "' transform='rotate(-90 80 80)'><title>" + escapeHtml(slice.label) + "：" + formatMoney(slice.value) + " 元</title></circle>";
   }).join("");
   return "<circle class='pie-track' cx='80' cy='80' r='" + radius + "' fill='none'></circle>" +
     slices +
@@ -407,7 +650,7 @@ function renderPieLegend(data) {
   return data.slices.map(function (slice, index) {
     var percent = data.total > 0 ? slice.value / data.total * 100 : 0;
     return "<div class='trend-pie-legend-item'>" +
-      "<i style='background:" + getPieSliceColor(index) + "'></i>" +
+      "<i style='background:" + getPieSliceColor(slice, index) + "'></i>" +
       "<span>" + escapeHtml(slice.label) + "</span>" +
       "<strong>" + escapeHtml(formatMoney(slice.value)) + " 元</strong>" +
       "<em>" + escapeHtml(percent.toFixed(1)) + "%</em>" +
@@ -482,6 +725,7 @@ function renderTrend(orders) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   });
+  syncTrendMobilePickers(orders);
   trendPointDetailsByKey = {};
   trend.points.forEach(function (point) {
     trendPointDetailsByKey[point.key] = {
@@ -1854,6 +2098,11 @@ if (trendNextYear) {
     renderDashboard();
   });
 }
+
+window.addEventListener("resize", function () {
+  window.clearTimeout(trendPickerResizeTimer);
+  trendPickerResizeTimer = window.setTimeout(syncTrendMobilePickers, 120);
+}, { passive: true });
 
 if (trendPieTileToggle) {
   trendPieTileToggle.addEventListener("click", function () {
