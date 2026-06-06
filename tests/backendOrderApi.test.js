@@ -6,14 +6,24 @@ import { recordPrismaQueryDuration } from "../backend/src/requestContext.js";
 var activeServers = [];
 var TEST_JWT_SECRET = "test-jwt-secret-for-order-api";
 
-function authHeaders(extra) {
+function authHeadersForRoles(roleCodes, extra) {
   return Object.assign({
     Authorization: "Bearer " + signAuthToken({
       id: "test-user-id",
       username: "admin",
-      roles: [{ role: { code: "ADMIN" } }]
+      roles: (Array.isArray(roleCodes) ? roleCodes : []).map(function (code) {
+        return { role: { code: code } };
+      })
     }, TEST_JWT_SECRET, "1h")
   }, extra || {});
+}
+
+function authHeaders(extra) {
+  return authHeadersForRoles(["ADMIN"], extra);
+}
+
+function nonAdminAuthHeaders(extra) {
+  return authHeadersForRoles(["OPERATOR"], extra);
 }
 
 function createTestApp(mock, extraOptions) {
@@ -629,6 +639,25 @@ describe("backend order API", function () {
     expect(body.code).toBe("AUTH_REQUIRED");
   });
 
+  it("allows non-admin users to read order lists", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({
+      id: "operator-readable-order",
+      orderNo: "ORD-OPERATOR-READ",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders", {
+      headers: nonAdminAuthHeaders()
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.orders).toHaveLength(1);
+    expect(body.orders[0].id).toBe("operator-readable-order");
+  });
+
   it("rejects config reads without a bearer token", async function () {
     var mock = createMockPrisma();
     var serverInfo = await listen(createTestApp(mock));
@@ -653,6 +682,25 @@ describe("backend order API", function () {
 
     expect(response.status).toBe(401);
     expect(body.code).toBe("AUTH_REQUIRED");
+  });
+
+  it("rejects config writes without an admin role", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/config", {
+      method: "PUT",
+      headers: nonAdminAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ config: { version: 1 } })
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toEqual({
+      code: "AUTH_FORBIDDEN",
+      message: "ADMIN role is required."
+    });
+    expect(mock.captured.systemConfigUpsertArgs).toBeUndefined();
   });
 
   it("returns the default config source when no app config exists", async function () {
@@ -937,6 +985,38 @@ describe("backend order API", function () {
     expect((await postResponse.json()).code).toBe("AUTH_REQUIRED");
     expect(deleteResponse.status).toBe(401);
     expect((await deleteResponse.json()).code).toBe("AUTH_REQUIRED");
+  });
+
+  it("rejects order map image deletes without an admin role", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({
+      id: "operator-image-delete-order",
+      orderNo: "ORD-IMAGE-OPERATOR-DELETE",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    mock.storeMapImage({
+      id: "operator-image-delete",
+      orderId: "operator-image-delete-order",
+      mimeType: "image/png",
+      sizeBytes: 1,
+      data: Buffer.from([1]),
+      updatedAt: new Date("2026-05-30T00:00:02.000Z")
+    });
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders/operator-image-delete-order/map-image", {
+      method: "DELETE",
+      headers: nonAdminAuthHeaders()
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toEqual({
+      code: "AUTH_FORBIDDEN",
+      message: "ADMIN role is required."
+    });
+    expect(mock.mapImagesByOrderId["operator-image-delete-order"]).toBeTruthy();
+    expect(mock.captured.orderImageDeleteManyArgs).toBeUndefined();
   });
 
   it("returns 404 when uploading a map image for a missing order", async function () {
@@ -1472,6 +1552,42 @@ describe("backend order API", function () {
     expect(response.status).toBe(503);
     expect(body.code).toBe("DATABASE_TRANSACTION_TIMEOUT");
     expect(body.message).toBe("Database transaction timed out.");
+  });
+
+  it("rejects order deletes without a bearer token", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders/server-order-delete", {
+      method: "DELETE"
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.code).toBe("AUTH_REQUIRED");
+  });
+
+  it("rejects order deletes without an admin role", async function () {
+    var mock = createMockPrisma();
+    var existing = mock.storeOrder(createDbOrder({
+      id: "operator-order-delete",
+      orderNo: "ORD-OPERATOR-DELETE",
+      orderDate: new Date("2026-05-30T00:00:00.000Z")
+    }));
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders/" + existing.id, {
+      method: "DELETE",
+      headers: nonAdminAuthHeaders()
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body).toEqual({
+      code: "AUTH_FORBIDDEN",
+      message: "ADMIN role is required."
+    });
+    expect(mock.ordersById[existing.id]).toBe(existing);
   });
 
   it("hard deletes an order by id", async function () {

@@ -292,6 +292,35 @@ function createAuthMiddleware(options) {
   };
 }
 
+function getRequestRoles(req) {
+  return (Array.isArray(req && req.user && req.user.roles) ? req.user.roles : []).map(function (role) {
+    if (typeof role === "string") return compactLogText(role);
+    if (role && typeof role === "object") return compactLogText(role.code || role.name);
+    return "";
+  }).filter(Boolean);
+}
+
+function createRoleMiddleware(requiredRole) {
+  var roleCode = compactLogText(requiredRole);
+  return function (req, res, next) {
+    if (!req.user) {
+      res.status(401).json({
+        code: "AUTH_REQUIRED",
+        message: "Authorization bearer token is required."
+      });
+      return;
+    }
+    if (getRequestRoles(req).indexOf(roleCode) !== -1) {
+      next();
+      return;
+    }
+    res.status(403).json({
+      code: "AUTH_FORBIDDEN",
+      message: roleCode + " role is required."
+    });
+  };
+}
+
 function getSafeBackgroundError(error) {
   if (error && error.code) return { code: String(error.code).slice(0, 80) };
   return {
@@ -619,7 +648,7 @@ export function createApp(options) {
     res.json({ config: record.value, source: "database" });
   }));
 
-  app.put("/api/config", asyncHandler(async function (req, res) {
+  app.put("/api/config", createRoleMiddleware("ADMIN"), asyncHandler(async function (req, res) {
     var input = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
     var config = input.config;
     if (!isPlainObject(config)) {
@@ -759,7 +788,7 @@ export function createApp(options) {
     res.status(200).end(buffer);
   }));
 
-  app.delete("/api/orders/:id/map-image", asyncHandler(async function (req, res) {
+  app.delete("/api/orders/:id/map-image", createRoleMiddleware("ADMIN"), asyncHandler(async function (req, res) {
     var orderId = String(req.params.id || "").trim();
     var order = await withDatabaseRetry("DELETE /api/orders/:id/map-image order lookup", function () {
       return prisma.order.findUnique({
@@ -949,7 +978,7 @@ export function createApp(options) {
     res.json({ order: toFrontendOrder(saved) });
   }));
 
-  app.delete("/api/orders/:id", asyncHandler(async function (req, res) {
+  app.delete("/api/orders/:id", createRoleMiddleware("ADMIN"), asyncHandler(async function (req, res) {
     var orderId = String(req.params.id || "").trim();
     var deleted = await withDatabaseRetry("DELETE /api/orders/:id", function () {
       return prisma.$transaction(async function (tx) {
