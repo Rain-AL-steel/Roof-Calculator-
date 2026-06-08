@@ -595,10 +595,10 @@ function renderTrendChart(trend, ordersByKey) {
 
 var PIE_FALLBACK_COLORS = ["#18745f", "#b9463e", "#4f5f9f", "#b7791f", "#64748b"];
 var TILE_COLOR_PIE_COLORS = {
-  "\u7070\u8272": "#7a858d",
-  "\u67a3\u7ea2": "#8f1d3a",
-  "\u7816\u7ea2": "#c65a3a",
-  "\u672a\u533a\u5206": "#64748b"
+  "gray": "#7a858d",
+  "jujube-red": "#8f1d3a",
+  "brick-red": "#c65a3a",
+  "unknown-color": "#64748b"
 };
 var TILE_BRAND_PIE_COLORS = {
   "\u7ea2\u6ce2": "#18745f",
@@ -610,19 +610,10 @@ function normalizePieColorLabel(label) {
   return String(label || "").trim();
 }
 
-function getTileColorLabelFromSlice(slice) {
-  var label = normalizePieColorLabel(slice && slice.label);
-  if (activeTrendTilePieView === "combo") {
-    var parts = label.split("-");
-    label = normalizePieColorLabel(parts[parts.length - 1]);
-  }
-  return label;
-}
-
 function getPieSliceColor(slice, index) {
   if (activeTrendPieMode === "tile") {
-    if (activeTrendTilePieView === "color" || activeTrendTilePieView === "combo") {
-      return TILE_COLOR_PIE_COLORS[getTileColorLabelFromSlice(slice)] || TILE_COLOR_PIE_COLORS["\u672a\u533a\u5206"];
+    if (activeTrendTilePieView === "color") {
+      return TILE_COLOR_PIE_COLORS[slice && slice.key] || TILE_COLOR_PIE_COLORS["unknown-color"];
     }
     return TILE_BRAND_PIE_COLORS[normalizePieColorLabel(slice && slice.label)] || PIE_FALLBACK_COLORS[index % PIE_FALLBACK_COLORS.length];
   }
@@ -660,7 +651,6 @@ function renderPieLegend(data) {
 
 function getTilePieSubtitle(view) {
   if (view === "color") return "按订单瓦片颜色统计金额占比";
-  if (view === "combo") return "按品牌与颜色组合统计金额占比";
   return "按主瓦节长区分红波、星大与未区分";
 }
 

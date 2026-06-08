@@ -30,15 +30,16 @@ function todayString() {
 }
 
 describe("report service", function () {
-  it("uses order date, order number and remark in the full report header", function () {
+  it("uses order date, customer color line and remark in the full report header", function () {
     var report = buildPreferredReport(makeSnapshot(), cloneConfig());
     var systemDate = todayString();
     expect(report.type).toBe("full");
     expect(report.data.dateStr).toBe("2026-04-19");
     expect(report.data.orderDate).toBe("2026-04-19");
     expect(report.html).toContain("2026-04-19");
-    expect(report.html).toContain("订单编号");
-    expect(report.html).toContain("ORD-PRINT-001");
+    expect(report.html).not.toContain("订单编号");
+    expect(report.html).toContain("class='meta-customer-line'");
+    expect(report.html).toContain("<span>客户：测试客户</span><span>颜色：枣红色</span>");
     expect(report.html).toContain("备注：补单");
     if (systemDate !== "2026-04-19") {
       expect(report.html).not.toContain(systemDate);

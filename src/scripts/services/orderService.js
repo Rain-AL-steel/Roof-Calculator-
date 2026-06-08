@@ -751,15 +751,15 @@ var TILE_COLOR_DEFINITIONS = [
 
 function classifyTileColor(value) {
   var text = compactText(value);
-  if (text === "枣红") return "jujube-red";
-  if (text === "砖红") return "brick-red";
-  if (text === "灰色") return "gray";
+  if (text.indexOf("枣红") !== -1) return "jujube-red";
+  if (text.indexOf("砖红") !== -1) return "brick-red";
+  if (text.indexOf("灰") !== -1) return "gray";
   return "unknown-color";
 }
 
 function getTilePieView(options) {
   var view = typeof options === "string" ? options : options && options.tileView;
-  return view === "color" || view === "combo" ? view : "brand";
+  return view === "color" ? view : "brand";
 }
 
 function createSliceTotals(definitions) {
@@ -790,25 +790,6 @@ function getTileBreakdownBrandEntries(tileBreakdown) {
     { key: "xingda", value: tileBreakdown.xingdaAmount },
     { key: "unknown-tile", value: tileBreakdown.unknownTileAmount }
   ];
-}
-
-function getTileComboKey(brandKey, colorKey) {
-  return brandKey + "-" + colorKey;
-}
-
-function buildComboSlices(totals) {
-  var slices = [];
-  TILE_BRAND_DEFINITIONS.forEach(function (brand) {
-    TILE_COLOR_DEFINITIONS.forEach(function (color) {
-      var key = getTileComboKey(brand.key, color.key);
-      slices.push({
-        key: key,
-        label: brand.label + "-" + color.label,
-        value: totals[key]
-      });
-    });
-  });
-  return slices;
 }
 
 function addTileBreakdownAmount(result, classification, amount) {
@@ -899,7 +880,6 @@ export function buildOrderPieData(orders, mode, options) {
   var tileView = getTilePieView(options);
   var tileBrandTotals = createSliceTotals(TILE_BRAND_DEFINITIONS);
   var tileColorTotals = createSliceTotals(TILE_COLOR_DEFINITIONS);
-  var tileComboTotals = {};
   var totals = (Array.isArray(orders) ? orders : []).reduce(function (result, order) {
     var parts = getOrderAmountParts(order);
     var colorKey = classifyTileColor(order && order.tileColor);
@@ -914,7 +894,6 @@ export function buildOrderPieData(orders, mode, options) {
     result.unknownTileAmount += tileBreakdown.unknownTileAmount;
     getTileBreakdownBrandEntries(tileBreakdown).forEach(function (entry) {
       addSliceTotal(tileBrandTotals, entry.key, entry.value);
-      addSliceTotal(tileComboTotals, getTileComboKey(entry.key, colorKey), entry.value);
     });
     addSliceTotal(tileColorTotals, colorKey, parts.tileAmount);
     return result;
@@ -936,8 +915,6 @@ export function buildOrderPieData(orders, mode, options) {
   ];
   if (tileOnly && tileView === "color") {
     slices = slicesFromDefinitions(TILE_COLOR_DEFINITIONS, tileColorTotals);
-  } else if (tileOnly && tileView === "combo") {
-    slices = buildComboSlices(tileComboTotals);
   } else if (tileOnly) {
     slices = slicesFromDefinitions(TILE_BRAND_DEFINITIONS, tileBrandTotals);
   }

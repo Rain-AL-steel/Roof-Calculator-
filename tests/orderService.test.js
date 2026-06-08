@@ -418,7 +418,7 @@ describe("order service", function () {
   it("builds tile pie color data from the order tile color", function () {
     var colorPie = buildOrderPieData([
       Object.assign({}, makeOrder("a", "2026-05-26", 0), {
-        tileColor: "枣红",
+        tileColor: "枣红色",
         totals: {
           mainAmount: 100,
           otherTileAmount: 10,
@@ -443,6 +443,19 @@ describe("order service", function () {
           otherTiles: []
         }
       }),
+      Object.assign({}, makeOrder("d", "2026-05-29", 0), {
+        tileColor: "砖红色",
+        totals: {
+          mainAmount: 20,
+          otherTileAmount: 0,
+          accessoryAmount: 0,
+          steelAmount: 0
+        },
+        items: {
+          mainRows: [{ segmentLength: 0.219, area: 2 }],
+          otherTiles: []
+        }
+      }),
       Object.assign({}, makeOrder("c", "2026-05-28", 0), {
         tileColor: "",
         totals: {
@@ -461,13 +474,14 @@ describe("order service", function () {
     expect(colorPie.tileView).toBe("color");
     expect(colorPie.slices).toEqual([
       { key: "jujube-red", label: "枣红", value: 110 },
+      { key: "brick-red", label: "砖红", value: 20 },
       { key: "gray", label: "灰色", value: 40 },
       { key: "unknown-color", label: "未区分", value: 30 }
     ]);
   });
 
-  it("builds tile pie combo data from saved brand and order color", function () {
-    var comboPie = buildOrderPieData([
+  it("falls back to brand tile pie data for unsupported tile views", function () {
+    var brandPie = buildOrderPieData([
       Object.assign({}, makeOrder("a", "2026-05-26", 0), {
         tileColor: "枣红",
         totals: {
@@ -512,14 +526,13 @@ describe("order service", function () {
           otherTiles: []
         }
       })
-    ], "tile", { tileView: "combo" });
+    ], "tile", { tileView: "mixed" });
 
-    expect(comboPie.tileView).toBe("combo");
-    expect(comboPie.slices).toEqual([
-      { key: "red-wave-jujube-red", label: "红波-枣红", value: 60 },
-      { key: "xingda-jujube-red", label: "星大-枣红", value: 40 },
-      { key: "xingda-gray", label: "星大-灰色", value: 70 },
-      { key: "unknown-tile-brick-red", label: "未区分-砖红", value: 30 }
+    expect(brandPie.tileView).toBe("brand");
+    expect(brandPie.slices).toEqual([
+      { key: "red-wave", label: "红波", value: 60 },
+      { key: "xingda", label: "星大", value: 110 },
+      { key: "unknown-tile", label: "未区分", value: 30 }
     ]);
   });
 
