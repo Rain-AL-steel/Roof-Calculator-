@@ -77,6 +77,8 @@ function createDbOrder(data, previous) {
     orderDate: data.orderDate || prior.orderDate,
     customerName: data.customerName !== undefined ? data.customerName : prior.customerName,
     tileColor: data.tileColor !== undefined ? data.tileColor : prior.tileColor,
+    steelCategory: data.steelCategory !== undefined ? data.steelCategory : prior.steelCategory,
+    galvanizingProcess: data.galvanizingProcess !== undefined ? data.galvanizingProcess : prior.galvanizingProcess,
     remark: data.remark !== undefined ? data.remark : prior.remark,
     deliveryAddress: data.deliveryAddress !== undefined ? data.deliveryAddress : prior.deliveryAddress,
     completionMonth: data.completionMonth !== undefined ? data.completionMonth : prior.completionMonth,
@@ -348,6 +350,8 @@ function createFrontendPayload() {
     customerName: "21\u989d\u6211\u70ed",
     deliveryAddress: "",
     deliveryLocation: null,
+    steelCategory: "",
+    galvanizingProcess: "",
     items: {
       mainRows: [
         {
@@ -1205,6 +1209,8 @@ describe("backend order API", function () {
       orderDate: new Date("2026-05-30T00:00:00.000Z"),
       customerName: "GET Customer",
       tileColor: null,
+      steelCategory: null,
+      galvanizingProcess: null,
       remark: null,
       deliveryAddress: null,
       completionMonth: null,
@@ -1226,13 +1232,18 @@ describe("backend order API", function () {
     expect(body.order.id).toBe(existing.id);
     expect(body.order.orderNo).toBe("ORD-GET-001");
     expect(body.order.clientOrderId).toBe("client-order-1");
+    expect(body.order.steelCategory).toBe("");
+    expect(body.order.galvanizingProcess).toBe("");
     expect(mock.captured.rootFindUniqueArgs[0].where.id).toBe(existing.id);
   });
 
   it("creates a new order from the frontend payload without using client ids or blank rows", async function () {
     var mock = createMockPrisma();
     var serverInfo = await listen(createTestApp(mock));
-    var payload = createFrontendPayload();
+    var payload = Object.assign(createFrontendPayload(), {
+      steelCategory: "友发",
+      galvanizingProcess: "双镀锌"
+    });
 
     var response = await fetch(serverInfo.url + "/api/orders", {
       method: "POST",
@@ -1247,6 +1258,8 @@ describe("backend order API", function () {
     expect(mock.captured.createData.id).not.toBe(payload.id);
     expect(mock.captured.createData.orderNo).not.toBe(payload.orderNo);
     expect(mock.captured.createData.clientOrderId).toBe(payload.id);
+    expect(mock.captured.createData.steelCategory).toBe("友发");
+    expect(mock.captured.createData.galvanizingProcess).toBe("双镀锌");
     expect(mock.captured.createData).not.toHaveProperty("createdAt");
     expect(mock.captured.createData).not.toHaveProperty("updatedAt");
     expect(mock.captured.createData.completionMonth).toBeNull();
@@ -1254,6 +1267,8 @@ describe("backend order API", function () {
     expect(mock.captured.createData.mainRows).toBeUndefined();
     expect(mock.captured.createData.lineItems).toBeUndefined();
     expect(mock.captured.mapLocationUpsertCalls).toBe(0);
+    expect(body.order.steelCategory).toBe("友发");
+    expect(body.order.galvanizingProcess).toBe("双镀锌");
     expect(body.order.items.mainRows).toEqual([]);
   });
 
@@ -1364,6 +1379,8 @@ describe("backend order API", function () {
     expect(response.status).toBe(200);
     expect(mock.captured.createData.id).not.toBe(payload.id);
     expect(mock.captured.createData.clientOrderId).toBe("explicit-client-order-id");
+    expect(mock.captured.createData.steelCategory).toBeNull();
+    expect(mock.captured.createData.galvanizingProcess).toBeNull();
     expect(body.order.clientOrderId).toBe("explicit-client-order-id");
   });
 
@@ -1464,6 +1481,8 @@ describe("backend order API", function () {
       orderDate: new Date("2026-05-29T00:00:00.000Z"),
       customerName: "Old Customer",
       tileColor: "Old Color",
+      steelCategory: "正大",
+      galvanizingProcess: "单镀锌",
       remark: "Old Remark",
       deliveryAddress: "Old Address",
       completionMonth: "2026-05",
@@ -1481,6 +1500,8 @@ describe("backend order API", function () {
       orderNo: "ORD-SHOULD-NOT-REPLACE",
       orderDate: "2026/05/30",
       customerName: "Updated Customer",
+      steelCategory: "友发",
+      galvanizingProcess: "双镀锌",
       completionMonth: "2026-06",
       items: {
         mainRows: [{ lengthsText: "2.5", totalQty: 2, actual: 5, area: 5, segmentLength: 0.219 }],
@@ -1509,6 +1530,10 @@ describe("backend order API", function () {
     expect(body.order.id).toBe(existing.id);
     expect(body.order.orderNo).toBe("ORD-KEEP-001");
     expect(mock.ordersById[existing.id].clientOrderId).toBe("client-keep-001");
+    expect(mock.captured.updateData.steelCategory).toBe("友发");
+    expect(mock.captured.updateData.galvanizingProcess).toBe("双镀锌");
+    expect(body.order.steelCategory).toBe("友发");
+    expect(body.order.galvanizingProcess).toBe("双镀锌");
     expect(mock.captured.updateData).not.toHaveProperty("orderNo");
     expect(mock.captured.updateData).not.toHaveProperty("clientOrderId");
     expect(mock.captured.updateData).not.toHaveProperty("mainRows");

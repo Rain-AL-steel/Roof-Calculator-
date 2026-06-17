@@ -1405,7 +1405,8 @@
   }
 
   .history-filters {
-    @apply grid grid-cols-1 items-end gap-3 md:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_210px_auto];
+    @apply grid grid-cols-1 items-end gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
 
   .history-layout {
@@ -1446,6 +1447,10 @@
   .history-actions,
   .record-actions {
     @apply flex flex-wrap gap-2;
+  }
+
+  .history-pagination {
+    @apply mt-3 flex flex-wrap items-center justify-end gap-2 text-sm font-black text-app-muted;
   }
 
   .history-location {

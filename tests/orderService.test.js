@@ -4,7 +4,10 @@ import {
   buildExportPayload,
   classifyMainTileRow,
   clearOrdersWithApiFallback,
+  filterHistoryOrders,
+  getHistoryMonthOptions,
   getOrderAmountParts,
+  getOrderHistoryTypeFlags,
   getOrdersInTrendModeRange,
   getOrdersInTrendRange,
   getOrderTrendByMode,
@@ -16,6 +19,7 @@ import {
   loadOrdersWithApiFallback,
   mergeOrders,
   normalizeOrder,
+  paginateHistoryOrders,
   readImportPayload,
   updateOrderWithApiFallback,
   upsertOrder,
@@ -134,6 +138,21 @@ describe("order service", function () {
     expect(order.items.mainRows).toHaveLength(1);
   });
 
+  it("preserves steel metadata fields on normalized orders", function () {
+    var order = normalizeOrder({
+      orderDate: "2026-05-26",
+      steelCategory: " 友发 ",
+      galvanizingProcess: " 双镀锌 ",
+      totals: { steelAmount: 50 },
+      items: {
+        steels: [{ name: "镀锌方管", qty: 1, unit: "支", price: 50, subtotal: 50 }]
+      }
+    });
+
+    expect(order.steelCategory).toBe("友发");
+    expect(order.galvanizingProcess).toBe("双镀锌");
+  });
+
   it("preserves saved main tile segment fields for future tile classification", function () {
     var order = normalizeOrder({
       orderDate: "2026-05-26",
@@ -239,6 +258,58 @@ describe("order service", function () {
     expect(trend.totalCount).toBe(3);
     expect(trend.totalAmount).toBe(160);
     expect(Number.isNaN(trend.totalAmount)).toBe(false);
+  });
+
+  it("filters history orders by month and type and paginates at 30 rows", function () {
+    var orders = [];
+    for (var index = 0; index < 35; index += 1) {
+      orders.push(normalizeOrder({
+        id: "tile-" + index,
+        orderDate: "2026-06-" + String((index % 28) + 1).padStart(2, "0"),
+        totals: { mainAmount: 10 },
+        items: {
+          mainRows: [{ lengthsText: "2.5", totalQty: 1, actual: 12, area: 2 }],
+          accessories: [],
+          steels: [],
+          otherTiles: []
+        }
+      }));
+    }
+    orders.push(normalizeOrder({
+      id: "steel-only",
+      orderDate: "2026-05-01",
+      totals: { steelAmount: 20 },
+      items: {
+        mainRows: [],
+        accessories: [],
+        steels: [{ name: "方管", qty: 1, unit: "支", price: 20, subtotal: 20 }],
+        otherTiles: []
+      }
+    }));
+    orders.push(normalizeOrder({
+      id: "mixed",
+      orderDate: "2026-06-15",
+      totals: { mainAmount: 10, steelAmount: 20 },
+      items: {
+        mainRows: [{ lengthsText: "3.0", totalQty: 1, actual: 14, area: 3 }],
+        accessories: [],
+        steels: [{ name: "方管", qty: 1, unit: "支", price: 20, subtotal: 20 }],
+        otherTiles: []
+      }
+    }));
+
+    expect(getHistoryMonthOptions(orders)).toEqual(["2026-06", "2026-05"]);
+    expect(getOrderHistoryTypeFlags(orders[0])).toEqual({ tile: true, steel: false });
+    expect(getOrderHistoryTypeFlags(orders[35])).toEqual({ tile: false, steel: true });
+    expect(getOrderHistoryTypeFlags(orders[36])).toEqual({ tile: true, steel: true });
+    expect(filterHistoryOrders(orders, { month: "2026-05", type: "steel" }).map(function (order) { return order.id; })).toEqual(["steel-only"]);
+    expect(filterHistoryOrders(orders, { month: "2026-06", type: "steel" }).map(function (order) { return order.id; })).toEqual(["mixed"]);
+
+    var firstPage = paginateHistoryOrders(orders, 1, 30);
+    var secondPage = paginateHistoryOrders(orders, 2, 30);
+    expect(firstPage.items).toHaveLength(30);
+    expect(firstPage.totalPages).toBe(2);
+    expect(secondPage.items).toHaveLength(7);
   });
 
   it("builds quarter-mode trend buckets for every quarter in a selected year", function () {

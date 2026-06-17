@@ -38,14 +38,23 @@ function getLogoHtml(snapshot, config) {
 
 function buildMetaItem(label, value, fallback) {
   var text = String(value || "").trim();
-  return "<div><span>" + escapeHtml(label) + "：</span>" + escapeHtml(text || fallback || "未填写") + "</div>";
+  return "<div><span>" + escapeHtml(label) + "：" + escapeHtml(text || fallback || "未填写") + "</span></div>";
 }
 
-function buildReportMeta(data, extraHtml) {
+function buildReportMeta(data, extraHtml, options) {
+  var settings = options || {};
   var customerName = String(data.customerName || "").trim();
   var tileColor = String(data.tileColor || "").trim();
-  return "<div class='meta-customer-line'><span>客户：" + escapeHtml(customerName || "未填写") + "</span><span>颜色：" + escapeHtml(tileColor || "未填写") + "</span></div>" +
+  var spans = ["<span>客户：" + escapeHtml(customerName || "未填写") + "</span>"];
+  if (settings.showColor !== false) {
+    spans.push("<span>颜色：" + escapeHtml(tileColor || "未填写") + "</span>");
+  }
+  return "<div class='meta-customer-line'>" + spans.join("") + "</div>" +
     (extraHtml || "");
+}
+
+function normalizeGalvanizingProcessText(value) {
+  return String(value || "").trim().replace(/^镀锌工艺\s*[：:]\s*/, "").trim();
 }
 
 function buildRemarkHtml(data) {
@@ -278,6 +287,8 @@ function createBaseData(snapshot, config) {
     orderNo: String(snapshot.orderNo || "").trim(),
     customerName: String(snapshot.customerName || "").trim(),
     tileColor: String(snapshot.tileColor || "").trim(),
+    steelCategory: String(snapshot.steelCategory || "").trim(),
+    galvanizingProcess: String(snapshot.galvanizingProcess || "").trim(),
     remark: String(snapshot.remark || "").trim(),
     logoHtml: getLogoHtml(snapshot, config),
     cuttingAdvice: normalizeCuttingAdvice(snapshot)
@@ -312,8 +323,8 @@ function buildFullReport(data, config) {
   return wrapReport(template.mainTitle, body, data, config, "full", buildCuttingAdviceHtml(data));
 }
 
-function buildSingleHeader(title, metaHtml, data, config) {
-  return "<div class='header'><h1>" + escapeHtml(title) + "</h1><p class='date'>" + getCompanyDateLine(config, data.dateStr) + "</p><div class='meta'>" + buildReportMeta(data, metaHtml) + "</div><div class='logo'>" + data.logoHtml + "</div></div>";
+function buildSingleHeader(title, metaHtml, data, config, options) {
+  return "<div class='header'><h1>" + escapeHtml(title) + "</h1><p class='date'>" + getCompanyDateLine(config, data.dateStr) + "</p><div class='meta'>" + buildReportMeta(data, metaHtml, options) + "</div><div class='logo'>" + data.logoHtml + "</div></div>";
 }
 
 function buildAccessoryOnlyReport(data, config) {
@@ -332,11 +343,11 @@ function buildSteelOnlyReport(data, config) {
   var rowsHtml = data.steels.map(function (item, index) {
     return "<tr><td>" + (index + 1) + "</td><td class='name'>" + escapeHtml(item.name) + "</td><td>" + formatTrimFixed(item.qty, 2) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
   }).join("");
-  var tubeName = String(config.steel.tubeMaterialName || "").trim();
-  var processText = tubeName && data.steels.some(function (item) {
-    return String(item.name || "").indexOf(tubeName) !== -1;
-  }) ? String(config.reportTemplate.steelProcessText || "").trim() : "";
-  var body = buildSingleHeader(config.reportTemplate.steelTitle, processText ? buildMetaItem("工艺", processText, "") : "", data, config) +
+  var metaHtml = [
+    data.steelCategory ? buildMetaItem("钢材类别", data.steelCategory, "") : "",
+    normalizeGalvanizingProcessText(data.galvanizingProcess) ? buildMetaItem("镀锌工艺", normalizeGalvanizingProcessText(data.galvanizingProcess), "") : ""
+  ].join("");
+  var body = buildSingleHeader(config.reportTemplate.steelTitle, metaHtml, data, config, { showColor: false }) +
     buildRemarkHtml(data) +
     "<div class='table-wrap'><table><thead><tr><th class='idx'>序号</th><th>材料名称 / 规格</th><th>数量</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + rowsHtml +
     "<tr class='sum'><td colspan='5'>钢铁材料合计金额</td><td>" + formatMoney(data.steelAmount) + "</td></tr></tbody></table></div>" +

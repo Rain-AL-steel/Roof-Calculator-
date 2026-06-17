@@ -60,6 +60,8 @@ model Order {
   orderDate          DateTime          @db.Date
   customerName       String?
   tileColor          String?
+  steelCategory      String?
+  galvanizingProcess String?
   remark             String?
   deliveryAddress    String?
   completionMonth    String?           @db.VarChar(7)

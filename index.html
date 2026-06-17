@@ -348,6 +348,14 @@
           <input id="tileColor" type="text" list="tileColorOptions" autocomplete="off" />
           <datalist id="tileColorOptions"></datalist>
         </div>
+        <div class="field">
+          <label for="steelCategory">钢材类别</label>
+          <input id="steelCategory" type="text" autocomplete="off" placeholder="正大、友发、白管等" />
+        </div>
+        <div class="field">
+          <label for="galvanizingProcess">镀锌工艺</label>
+          <input id="galvanizingProcess" type="text" autocomplete="off" value="双镀锌" />
+        </div>
         <div class="field span-3">
           <label for="deliveryAddress">收货地址</label>
           <input id="deliveryAddress" type="text" autocomplete="off" placeholder="用于首页地图定位，请尽量填写省市区和详细地址" />
@@ -536,6 +544,20 @@
         </div>
         <div class="history-filters">
           <div class="field">
+            <label for="historyMonthFilter">月份筛选</label>
+            <select id="historyMonthFilter">
+              <option value="">全部月份</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="historyTypeFilter">订单类型</label>
+            <select id="historyTypeFilter">
+              <option value="">全部订单</option>
+              <option value="tile">瓦片订单</option>
+              <option value="steel">钢铁订单</option>
+            </select>
+          </div>
+          <div class="field">
             <label for="historyDateFilter">日期筛选</label>
             <input id="historyDateFilter" type="date" />
           </div>
@@ -584,6 +606,11 @@
             </table>
           </div>
           <div class="empty-note" id="historyEmpty">暂无符合条件的订单</div>
+          <div class="history-pagination" id="historyPagination" hidden>
+            <button type="button" class="btn btn-neutral compact-btn" id="historyPrevPage">上一页</button>
+            <span id="historyPageInfo">第 1 / 1 页，共 0 条</span>
+            <button type="button" class="btn btn-neutral compact-btn" id="historyNextPage">下一页</button>
+          </div>
         </section>
 
         <aside class="record-detail" id="recordDetail" hidden>

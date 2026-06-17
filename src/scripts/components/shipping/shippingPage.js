@@ -73,6 +73,8 @@ export function initShippingPage(options) {
   var orderDateInput = document.getElementById("orderDate");
   var customerNameInput = document.getElementById("customerName");
   var tileColorInput = document.getElementById("tileColor");
+  var steelCategoryInput = document.getElementById("steelCategory");
+  var galvanizingProcessInput = document.getElementById("galvanizingProcess");
   var deliveryAddressInput = document.getElementById("deliveryAddress");
   var completionMonthInput = document.getElementById("completionMonth");
   var orderRemarkInput = document.getElementById("orderRemark");
@@ -1003,6 +1005,8 @@ export function initShippingPage(options) {
       otherTiles: getOtherTileRowsData(),
       customerName: customerNameInput.value.trim(),
       tileColor: tileColorInput.value.trim(),
+      steelCategory: steelCategoryInput ? steelCategoryInput.value.trim() : "",
+      galvanizingProcess: galvanizingProcessInput ? galvanizingProcessInput.value.trim() : "",
       deliveryAddress: deliveryAddressInput ? deliveryAddressInput.value.trim() : "",
       completionMonth: completionMonthInput ? completionMonthInput.value.trim() : "",
       remark: orderRemarkInput ? orderRemarkInput.value.trim() : "",
@@ -1024,6 +1028,8 @@ export function initShippingPage(options) {
       orderDate: snapshot.orderDate,
       customerName: snapshot.customerName,
       tileColor: snapshot.tileColor,
+      steelCategory: snapshot.steelCategory,
+      galvanizingProcess: snapshot.galvanizingProcess,
       deliveryAddress: snapshot.deliveryAddress,
       completionMonth: snapshot.completionMonth,
       remark: snapshot.remark,

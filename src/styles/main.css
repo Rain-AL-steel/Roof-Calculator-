@@ -4158,12 +4158,7 @@ body.image-lightbox-open {
   grid-template-columns: repeat(1, minmax(0, 1fr));
   align-items: flex-end;
   gap: 0.75rem;
-}
-
-@media (min-width: 760px) {
-  .history-filters {
-    grid-template-columns: 160px minmax(0,1fr) minmax(0,1fr) 210px auto;
-  }
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .history-layout {
@@ -4234,6 +4229,20 @@ body.image-lightbox-open {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.history-pagination {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 900;
+  --tw-text-opacity: 1;
+  color: rgb(123 106 88 / var(--tw-text-opacity, 1));
 }
 
 .history-location {

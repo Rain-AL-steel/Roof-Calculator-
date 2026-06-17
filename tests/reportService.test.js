@@ -218,6 +218,8 @@ describe("report service", function () {
     var steelReport = buildPreferredReport(makeSnapshot({
       mainRows: [],
       mainAmount: 0,
+      steelCategory: "友发",
+      galvanizingProcess: "镀锌工艺：双镀锌",
       steels: [{ name: "镀锌方管 40×80 厚 1.8", qty: 1, unit: "支", price: 50, subtotal: 50 }]
     }), cloneConfig());
     var otherTileReport = buildPreferredReport(makeSnapshot({
@@ -229,9 +231,29 @@ describe("report service", function () {
     expect(steelReport.type).toBe("steel");
     expect(steelReport.html).toContain("ORD-PRINT-001");
     expect(steelReport.html).toContain("备注：补单");
+    expect(steelReport.html).toContain("<span>客户：测试客户</span>");
+    expect(steelReport.html).not.toContain("颜色：枣红色");
+    expect(steelReport.html).toContain("钢材类别：友发");
     expect(steelReport.html).toContain("镀锌工艺：双镀锌");
+    expect(steelReport.html).not.toContain("工艺：镀锌工艺：双镀锌");
     expect(otherTileReport.type).toBe("other-tile");
     expect(otherTileReport.html).toContain("ORD-PRINT-001");
     expect(otherTileReport.html).toContain("备注：补单");
+    expect(otherTileReport.html).toContain("颜色：枣红色");
+  });
+
+  it("omits blank steel category and galvanizing process in steel-only reports", function () {
+    var report = buildPreferredReport(makeSnapshot({
+      mainRows: [],
+      mainAmount: 0,
+      steelCategory: "",
+      galvanizingProcess: "",
+      steels: [{ name: "角码", qty: 4, unit: "个", price: 2, subtotal: 8 }]
+    }), cloneConfig());
+
+    expect(report.type).toBe("steel");
+    expect(report.html).not.toContain("颜色：");
+    expect(report.html).not.toContain("钢材类别：");
+    expect(report.html).not.toContain("镀锌工艺：");
   });
 });

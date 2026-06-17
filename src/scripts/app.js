@@ -22,7 +22,9 @@ import {
   buildOrderPieData,
   clearOrdersWithApiFallback,
   deleteOrderWithApiFallback,
+  filterHistoryOrders,
   getDateOnly,
+  getHistoryMonthOptions,
   getOrderStats,
   getOrderTrend,
   getOrderTrendByMode,
@@ -31,6 +33,7 @@ import {
   loadOrders,
   loadOrdersWithApiFallback,
   normalizeOrder,
+  paginateHistoryOrders,
   updateOrderWithApiFallback,
   upsertOrderWithApiFallback
 } from "./services/orderService.js";
@@ -103,6 +106,8 @@ var mapImageLightboxImg = document.getElementById("mapImageLightboxImg");
 var mapImageLightboxCaption = document.getElementById("mapImageLightboxCaption");
 var mapImageLightboxClose = document.getElementById("mapImageLightboxClose");
 
+var historyMonthFilter = document.getElementById("historyMonthFilter");
+var historyTypeFilter = document.getElementById("historyTypeFilter");
 var historyDateFilter = document.getElementById("historyDateFilter");
 var historyCustomerSearch = document.getElementById("historyCustomerSearch");
 var historyAddressSearch = document.getElementById("historyAddressSearch");
@@ -111,6 +116,10 @@ var resetHistoryFilters = document.getElementById("resetHistoryFilters");
 var historyCountText = document.getElementById("historyCountText");
 var historyTableBody = document.getElementById("historyTableBody");
 var historyEmpty = document.getElementById("historyEmpty");
+var historyPagination = document.getElementById("historyPagination");
+var historyPrevPage = document.getElementById("historyPrevPage");
+var historyNextPage = document.getElementById("historyNextPage");
+var historyPageInfo = document.getElementById("historyPageInfo");
 var clearAllOrdersBtn = document.getElementById("clearAllOrders");
 var recordDetail = document.getElementById("recordDetail");
 var recordDetailTitle = document.getElementById("recordDetailTitle");
@@ -124,6 +133,8 @@ var activeTrendMonth = new Date().getMonth() + 1;
 var activeTrendPieMode = "overview";
 var activeTrendTilePieView = "brand";
 var activeDashboardMonth = getMonthKey(new Date());
+var activeHistoryPage = 1;
+var HISTORY_PAGE_SIZE = 30;
 var activeTrendPointKey = "";
 var trendPointDetailsByKey = {};
 var trendYearMobilePicker = null;
@@ -1549,11 +1560,25 @@ function renderDashboard() {
   renderOrderMap(orders);
 }
 
+function renderHistoryMonthOptions(orders) {
+  if (!historyMonthFilter) return;
+  var selected = historyMonthFilter.value;
+  var months = getHistoryMonthOptions(orders);
+  historyMonthFilter.innerHTML = "<option value=''>全部月份</option>" + months.map(function (month) {
+    return "<option value='" + escapeHtml(month) + "'>" + escapeHtml(month) + "</option>";
+  }).join("");
+  historyMonthFilter.value = months.indexOf(selected) !== -1 ? selected : "";
+}
+
 function getFilteredOrders() {
+  var orders = loadOrders();
+  renderHistoryMonthOptions(orders);
+  var monthValue = historyMonthFilter ? historyMonthFilter.value : "";
+  var typeValue = historyTypeFilter ? historyTypeFilter.value : "";
   var dateValue = historyDateFilter.value;
   var customerQuery = historyCustomerSearch.value.trim().toLowerCase();
   var addressQuery = historyAddressSearch.value.trim().toLowerCase();
-  return loadOrders().filter(function (order) {
+  return filterHistoryOrders(orders, { month: monthValue, type: typeValue }).filter(function (order) {
     var matchesDate = !dateValue || order.orderDate === dateValue;
     var matchesCustomer = !customerQuery || String(order.customerName || "").toLowerCase().indexOf(customerQuery) !== -1;
     var matchesAddress = !addressQuery || getOrderLocationText(order).toLowerCase().indexOf(addressQuery) !== -1;
@@ -1584,9 +1609,15 @@ function sortHistoryOrders(orders) {
 
 function renderHistory() {
   var filtered = sortHistoryOrders(getFilteredOrders());
+  var page = paginateHistoryOrders(filtered, activeHistoryPage, HISTORY_PAGE_SIZE);
+  activeHistoryPage = page.page;
   historyCountText.textContent = "共 " + filtered.length + " 条记录";
   setEmptyNote(historyEmpty, filtered.length === 0);
-  historyTableBody.innerHTML = filtered.map(function (order) {
+  if (historyPagination) historyPagination.hidden = filtered.length <= HISTORY_PAGE_SIZE;
+  if (historyPageInfo) historyPageInfo.textContent = "第 " + page.page + " / " + page.totalPages + " 页，共 " + page.totalCount + " 条";
+  if (historyPrevPage) historyPrevPage.disabled = page.page <= 1;
+  if (historyNextPage) historyNextPage.disabled = page.page >= page.totalPages;
+  historyTableBody.innerHTML = page.items.map(function (order) {
     return "<tr>" +
       "<td>" + escapeHtml(order.orderDate) + "</td>" +
       "<td>" + escapeHtml(getOrderCustomer(order)) + "</td>" +
@@ -1768,6 +1799,8 @@ function renderRecordDetail(order, mode) {
       "<label class='field'><span>订单日期</span><input name='orderDate' type='date' value='" + escapeHtml(order.orderDate) + "' required /></label>" +
       "<label class='field'><span>客户名称</span><input name='customerName' type='text' value='" + escapeHtml(order.customerName) + "' /></label>" +
       "<label class='field'><span>颜色</span><input name='tileColor' type='text' value='" + escapeHtml(order.tileColor) + "' /></label>" +
+      "<label class='field'><span>钢材类别</span><input name='steelCategory' type='text' value='" + escapeHtml(order.steelCategory || "") + "' /></label>" +
+      "<label class='field'><span>镀锌工艺</span><input name='galvanizingProcess' type='text' value='" + escapeHtml(order.galvanizingProcess || "") + "' /></label>" +
       "<label class='field span-2'><span>收货地址</span><input name='deliveryAddress' type='text' value='" + escapeHtml(order.deliveryAddress) + "' /></label>" +
       "<label class='field'><span>建成年月</span><input name='completionMonth' type='month' value='" + escapeHtml(order.completionMonth) + "' /></label>" +
       "<label class='field span-2'><span>备注</span><input name='remark' type='text' value='" + escapeHtml(order.remark) + "' /></label>" +
@@ -1789,6 +1822,8 @@ function renderRecordDetail(order, mode) {
     "<div class='detail-summary'>" +
     "<div><span>客户</span><strong>" + escapeHtml(getOrderCustomer(order)) + "</strong></div>" +
     "<div><span>颜色</span><strong>" + escapeHtml(order.tileColor || "未填写") + "</strong></div>" +
+    "<div><span>钢材类别</span><strong>" + escapeHtml(order.steelCategory || "未填写") + "</strong></div>" +
+    "<div><span>镀锌工艺</span><strong>" + escapeHtml(order.galvanizingProcess || "未填写") + "</strong></div>" +
     "<div><span>金额</span><strong>" + formatMoney(order.totals.grandAmount) + " 元</strong></div>" +
     "<div><span>面积</span><strong>" + formatArea(order.totals.areaTotal) + " ㎡</strong></div>" +
     "<div><span>位置</span><strong>" + escapeHtml(getOrderLocationText(order)) + "</strong></div>" +
@@ -1917,6 +1952,8 @@ function saveRecordEdit(form) {
     clientOrderId: order.clientOrderId,
     customerName: form.elements.customerName.value,
     tileColor: form.elements.tileColor.value,
+    steelCategory: form.elements.steelCategory.value,
+    galvanizingProcess: form.elements.galvanizingProcess.value,
     deliveryAddress: form.elements.deliveryAddress.value,
     completionMonth: form.elements.completionMonth.value,
     remark: form.elements.remark.value,
@@ -2154,18 +2191,40 @@ document.addEventListener("keydown", function (event) {
   }
 });
 
-[historyDateFilter, historyCustomerSearch, historyAddressSearch, historySortSelect].forEach(function (input) {
-  input.addEventListener("input", renderHistory);
-  input.addEventListener("change", renderHistory);
+[historyMonthFilter, historyTypeFilter, historyDateFilter, historyCustomerSearch, historyAddressSearch, historySortSelect].forEach(function (input) {
+  if (!input) return;
+  var resetAndRender = function () {
+    activeHistoryPage = 1;
+    renderHistory();
+  };
+  input.addEventListener("input", resetAndRender);
+  input.addEventListener("change", resetAndRender);
 });
 
 resetHistoryFilters.addEventListener("click", function () {
+  if (historyMonthFilter) historyMonthFilter.value = "";
+  if (historyTypeFilter) historyTypeFilter.value = "";
   historyDateFilter.value = "";
   historyCustomerSearch.value = "";
   historyAddressSearch.value = "";
   historySortSelect.value = "time-desc";
+  activeHistoryPage = 1;
   renderHistory();
 });
+
+if (historyPrevPage) {
+  historyPrevPage.addEventListener("click", function () {
+    activeHistoryPage = Math.max(1, activeHistoryPage - 1);
+    renderHistory();
+  });
+}
+
+if (historyNextPage) {
+  historyNextPage.addEventListener("click", function () {
+    activeHistoryPage += 1;
+    renderHistory();
+  });
+}
 
 historyTableBody.addEventListener("click", function (event) {
   var button = event.target.closest("[data-record-action]");

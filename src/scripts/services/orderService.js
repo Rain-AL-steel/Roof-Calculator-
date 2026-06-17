@@ -234,6 +234,8 @@ export function normalizeOrder(input) {
     orderDate: orderDate,
     customerName: compactText(source.customerName),
     tileColor: compactText(source.tileColor),
+    steelCategory: compactText(source.steelCategory),
+    galvanizingProcess: compactText(source.galvanizingProcess),
     remark: compactText(source.remark),
     deliveryAddress: compactText(source.deliveryAddress),
     completionMonth: normalizeMonthString(source.completionMonth),
@@ -256,6 +258,70 @@ function sortOrders(orders) {
     var timeB = Date.parse(b.updatedAt || b.createdAt || b.orderDate || "");
     return (Number.isFinite(timeB) ? timeB : 0) - (Number.isFinite(timeA) ? timeA : 0);
   });
+}
+
+function hasAnyRows(rows) {
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+function getOrderItems(order) {
+  var source = order || {};
+  return source.items || {};
+}
+
+function getHistoryMonthKey(order) {
+  var text = compactText(order && order.orderDate);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text.slice(0, 7) : "";
+}
+
+export function getHistoryMonthOptions(orders) {
+  var months = {};
+  (Array.isArray(orders) ? orders : []).forEach(function (order) {
+    var key = getHistoryMonthKey(order);
+    if (key) months[key] = true;
+  });
+  return Object.keys(months).sort().reverse();
+}
+
+export function getOrderHistoryTypeFlags(order) {
+  var items = getOrderItems(order);
+  return {
+    tile: hasAnyRows(items.mainRows || order && order.mainRows) || hasAnyRows(items.otherTiles || order && order.otherTiles),
+    steel: hasAnyRows(items.steels || order && order.steels)
+  };
+}
+
+export function orderMatchesHistoryType(order, type) {
+  if (!type) return true;
+  var flags = getOrderHistoryTypeFlags(order);
+  if (type === "tile") return flags.tile;
+  if (type === "steel") return flags.steel;
+  return true;
+}
+
+export function filterHistoryOrders(orders, options) {
+  var settings = options || {};
+  var month = compactText(settings.month);
+  var type = compactText(settings.type);
+  return (Array.isArray(orders) ? orders : []).filter(function (order) {
+    var matchesMonth = !month || getHistoryMonthKey(order) === month;
+    return matchesMonth && orderMatchesHistoryType(order, type);
+  });
+}
+
+export function paginateHistoryOrders(orders, page, pageSize) {
+  var list = Array.isArray(orders) ? orders : [];
+  var size = Math.max(1, Math.trunc(Number(pageSize) || 30));
+  var totalPages = Math.max(1, Math.ceil(list.length / size));
+  var currentPage = Math.min(totalPages, Math.max(1, Math.trunc(Number(page) || 1)));
+  var start = (currentPage - 1) * size;
+  return {
+    items: list.slice(start, start + size),
+    page: currentPage,
+    pageSize: size,
+    totalCount: list.length,
+    totalPages: totalPages
+  };
 }
 
 function readOrdersPayload(payload) {
