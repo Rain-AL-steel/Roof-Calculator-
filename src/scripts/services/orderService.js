@@ -236,6 +236,7 @@ export function normalizeOrder(input) {
     tileColor: compactText(source.tileColor),
     steelCategory: compactText(source.steelCategory),
     galvanizingProcess: compactText(source.galvanizingProcess),
+    deliveryMethod: compactText(source.deliveryMethod),
     remark: compactText(source.remark),
     deliveryAddress: compactText(source.deliveryAddress),
     completionMonth: normalizeMonthString(source.completionMonth),

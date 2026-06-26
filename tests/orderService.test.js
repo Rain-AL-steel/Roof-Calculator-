@@ -138,11 +138,12 @@ describe("order service", function () {
     expect(order.items.mainRows).toHaveLength(1);
   });
 
-  it("preserves steel metadata fields on normalized orders", function () {
+  it("preserves order metadata fields on normalized orders", function () {
     var order = normalizeOrder({
       orderDate: "2026-05-26",
       steelCategory: " 友发 ",
       galvanizingProcess: " 双镀锌 ",
+      deliveryMethod: " 自提 ",
       totals: { steelAmount: 50 },
       items: {
         steels: [{ name: "镀锌方管", qty: 1, unit: "支", price: 50, subtotal: 50 }]
@@ -151,6 +152,7 @@ describe("order service", function () {
 
     expect(order.steelCategory).toBe("友发");
     expect(order.galvanizingProcess).toBe("双镀锌");
+    expect(order.deliveryMethod).toBe("自提");
   });
 
   it("preserves saved main tile segment fields for future tile classification", function () {

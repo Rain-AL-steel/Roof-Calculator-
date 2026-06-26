@@ -62,6 +62,7 @@ model Order {
   tileColor          String?
   steelCategory      String?
   galvanizingProcess String?
+  deliveryMethod     String?
   remark             String?
   deliveryAddress    String?
   completionMonth    String?           @db.VarChar(7)

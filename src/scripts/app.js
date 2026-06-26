@@ -135,6 +135,7 @@ var activeTrendTilePieView = "brand";
 var activeDashboardMonth = getMonthKey(new Date());
 var activeHistoryPage = 1;
 var HISTORY_PAGE_SIZE = 30;
+var DELIVERY_METHOD_OPTIONS = ["", "自提", "包配送", "三轮车配送"];
 var activeTrendPointKey = "";
 var trendPointDetailsByKey = {};
 var trendYearMobilePicker = null;
@@ -1036,6 +1037,15 @@ function formatCompletionMonth(value) {
   return match[1] + "年" + Number(match[2]) + "月建成";
 }
 
+function renderDeliveryMethodOptions(selectedValue) {
+  var selected = String(selectedValue || "").trim();
+  return DELIVERY_METHOD_OPTIONS.map(function (value) {
+    var label = value || "请选择";
+    var selectedAttr = value === selected ? " selected" : "";
+    return "<option value='" + escapeHtml(value) + "'" + selectedAttr + ">" + escapeHtml(label) + "</option>";
+  }).join("");
+}
+
 function getOrderDateTime(order) {
   var time = Date.parse(order && order.orderDate || "");
   return Number.isFinite(time) ? time : 0;
@@ -1801,6 +1811,7 @@ function renderRecordDetail(order, mode) {
       "<label class='field'><span>颜色</span><input name='tileColor' type='text' value='" + escapeHtml(order.tileColor) + "' /></label>" +
       "<label class='field'><span>钢材类别</span><input name='steelCategory' type='text' value='" + escapeHtml(order.steelCategory || "") + "' /></label>" +
       "<label class='field'><span>镀锌工艺</span><input name='galvanizingProcess' type='text' value='" + escapeHtml(order.galvanizingProcess || "") + "' /></label>" +
+      "<label class='field'><span>配送方式</span><select name='deliveryMethod'>" + renderDeliveryMethodOptions(order.deliveryMethod) + "</select></label>" +
       "<label class='field span-2'><span>收货地址</span><input name='deliveryAddress' type='text' value='" + escapeHtml(order.deliveryAddress) + "' /></label>" +
       "<label class='field'><span>建成年月</span><input name='completionMonth' type='month' value='" + escapeHtml(order.completionMonth) + "' /></label>" +
       "<label class='field span-2'><span>备注</span><input name='remark' type='text' value='" + escapeHtml(order.remark) + "' /></label>" +
@@ -1824,6 +1835,7 @@ function renderRecordDetail(order, mode) {
     "<div><span>颜色</span><strong>" + escapeHtml(order.tileColor || "未填写") + "</strong></div>" +
     "<div><span>钢材类别</span><strong>" + escapeHtml(order.steelCategory || "未填写") + "</strong></div>" +
     "<div><span>镀锌工艺</span><strong>" + escapeHtml(order.galvanizingProcess || "未填写") + "</strong></div>" +
+    "<div><span>配送方式</span><strong>" + escapeHtml(order.deliveryMethod || "未填写") + "</strong></div>" +
     "<div><span>金额</span><strong>" + formatMoney(order.totals.grandAmount) + " 元</strong></div>" +
     "<div><span>面积</span><strong>" + formatArea(order.totals.areaTotal) + " ㎡</strong></div>" +
     "<div><span>位置</span><strong>" + escapeHtml(getOrderLocationText(order)) + "</strong></div>" +
@@ -1954,6 +1966,7 @@ function saveRecordEdit(form) {
     tileColor: form.elements.tileColor.value,
     steelCategory: form.elements.steelCategory.value,
     galvanizingProcess: form.elements.galvanizingProcess.value,
+    deliveryMethod: form.elements.deliveryMethod.value,
     deliveryAddress: form.elements.deliveryAddress.value,
     completionMonth: form.elements.completionMonth.value,
     remark: form.elements.remark.value,

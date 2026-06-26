@@ -41,6 +41,12 @@ function buildMetaItem(label, value, fallback) {
   return "<div><span>" + escapeHtml(label) + "：" + escapeHtml(text || fallback || "未填写") + "</span></div>";
 }
 
+function buildMetaSpan(label, value, fallback) {
+  var text = String(value || "").trim();
+  var display = text || fallback || "";
+  return display ? "<span>" + escapeHtml(label) + "：" + escapeHtml(display) + "</span>" : "";
+}
+
 function buildReportMeta(data, extraHtml, options) {
   var settings = options || {};
   var customerName = String(data.customerName || "").trim();
@@ -57,16 +63,33 @@ function normalizeGalvanizingProcessText(value) {
   return String(value || "").trim().replace(/^镀锌工艺\s*[：:]\s*/, "").trim();
 }
 
+function buildFullReportMeta(data) {
+  var spans = [
+    buildMetaSpan("客户", data.customerName, "未填写"),
+    buildMetaSpan("颜色", data.tileColor, "未填写")
+  ];
+  var steelCategory = String(data.steelCategory || "").trim();
+  var galvanizingProcess = normalizeGalvanizingProcessText(data.galvanizingProcess);
+  var deliveryMethod = String(data.deliveryMethod || "").trim();
+  if (steelCategory) spans.push(buildMetaSpan("钢材类别", steelCategory, ""));
+  if (galvanizingProcess) spans.push(buildMetaSpan("镀锌工艺", galvanizingProcess, ""));
+  if (deliveryMethod) spans.push(buildMetaSpan("配送方式", deliveryMethod, ""));
+  return "<div class='meta-customer-line'>" + spans.join("") + "</div>";
+}
+
 function buildRemarkHtml(data) {
   var remark = String(data.remark || "").trim();
   return remark ? "<div class='remark'>备注：" + escapeHtml(remark) + "</div>" : "";
 }
 
-function getReportFooter(config) {
+function getReportFooter(config, kind) {
   var basics = config.basics;
   var template = config.reportTemplate;
   var addressLine = escapeHtml(template.addressLabel || "地址") + "：" + escapeHtml(basics.address || "");
   var phoneLine = escapeHtml(template.phoneLabel || "电话") + "：" + escapeHtml(basics.phone || "");
+  if (kind === "full") {
+    return "<div class='sign'><p class='note'>温馨提示：" + escapeHtml(template.warmTip || "") + "</p><div class='sign-row'><p class='sign-address'>" + addressLine + "</p><p class='sign-phone'>" + phoneLine + "</p><div class='sign-right'><p>" + escapeHtml(template.signatureLabel || "") + "</p><p>" + escapeHtml(template.receiptDateLabel || "") + "</p></div></div></div>";
+  }
   return "<div class='sign'><p class='note'>温馨提示：" + escapeHtml(template.warmTip || "") + "</p><div class='sign-row'><div><p>" + addressLine + "</p><p>" + phoneLine + "</p></div><div><p>" + escapeHtml(template.signatureLabel || "") + "</p><p>" + escapeHtml(template.receiptDateLabel || "") + "</p></div></div></div>";
 }
 
@@ -91,13 +114,14 @@ function getSharedReportCss(kind) {
       ".actions button{pointer-events:auto;height:42px;border-radius:8px;border:1px solid #ccd6ce;background:#fff;padding:0 16px;font-weight:900;box-shadow:0 8px 22px rgba(0,0,0,.12);cursor:pointer}",
       ".actions .print{border-color:#13725d;background:#13725d;color:#fff}",
       ".spacer{height:52px}",
-      ".header{position:relative;min-height:96px;border-bottom:3px solid #1f261f;padding:5px 0 10px;margin-bottom:12px}",
+      ".header{position:relative;min-height:112px;border-bottom:3px solid #1f261f;padding:5px 0 10px;margin-bottom:12px}",
       ".date{text-align:center;color:#555;margin:5px 0 0;font-size:15px;font-weight:800}",
       ".logo{position:absolute;right:0;top:0;width:205px;height:86px;display:flex;align-items:center;justify-content:flex-end}",
       ".logo img{max-width:205px;max-height:86px;object-fit:contain}",
-      ".meta{position:absolute;left:0;right:230px;bottom:12px;display:flex;align-items:center;gap:20px;font-size:16px;font-weight:900;text-align:left}",
-      ".meta-customer-line{display:flex;align-items:center;gap:24px;justify-content:flex-start;white-space:nowrap}",
-      ".meta div{white-space:nowrap;overflow:visible;text-overflow:clip}",
+      ".meta{position:static;margin-top:7px;margin-right:230px;font-size:15px;font-weight:900;text-align:left}",
+      ".meta-customer-line{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 18px;align-items:start}",
+      ".meta-customer-line span{display:block;min-width:0;line-height:1.28;white-space:normal;overflow-wrap:anywhere}",
+      ".meta div{white-space:normal;overflow:visible;text-overflow:clip}",
       ".remark{margin:0 0 9px;border:1px solid #9ca69d;background:#f8faf8;padding:7px 9px;font-size:14px;font-weight:900;line-height:1.35}",
       ".content{display:grid;grid-template-columns:minmax(0,45.2%) minmax(0,54.8%);gap:6mm;align-items:start}",
       ".content>div{min-width:0}",
@@ -110,10 +134,12 @@ function getSharedReportCss(kind) {
       ".grand{margin-top:11px;border-top:3px solid #1f261f;border-bottom:3px solid #1f261f;padding:10px 3px 10px 0;text-align:right;font-size:28px;line-height:1.1;font-weight:900}",
       ".sign{margin-top:10px;border-top:1px solid #c8cec9;padding-top:9px}",
       ".note{margin:0 0 10px;text-align:center;font-size:14px;font-weight:900;line-height:1.45}",
-      ".sign-row{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:24px;font-size:14px;font-weight:800;line-height:1.65;align-items:start}",
+      ".sign-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,42%);grid-template-rows:auto auto;gap:2px 28px;font-size:14px;font-weight:800;line-height:1.65;align-items:start}",
       ".sign-row p{margin:0}",
-      ".sign-row>div:last-child{min-width:340px}",
-      ".sign-row>div:last-child p{white-space:nowrap}",
+      ".sign-address{grid-column:1;grid-row:1}",
+      ".sign-phone{grid-column:1;grid-row:2}",
+      ".sign-right{grid-column:2;grid-row:2;align-self:start;display:grid;gap:2px;min-width:0}",
+      ".sign-right p{white-space:nowrap}",
       "@media print{.actions,.spacer{display:none!important}.header{margin-top:0}}"
     ].join("");
   }
@@ -125,7 +151,7 @@ function getCuttingReportCss() {
 }
 
 function wrapReport(title, bodyHtml, data, config, kind, afterFooterHtml) {
-  return "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='UTF-8'><title>" + escapeHtml(getReportFileTitle(data)) + "</title><style>" + getSharedReportCss(kind) + getCuttingReportCss() + "</style></head><body><div class='actions'><button type='button' onclick='window.close()'>返回修改</button><button type='button' class='print' onclick='window.print()'>打印报表</button></div><div class='spacer'></div>" + bodyHtml + getReportFooter(config) + (afterFooterHtml || "") + "</body></html>";
+  return "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='UTF-8'><title>" + escapeHtml(getReportFileTitle(data)) + "</title><style>" + getSharedReportCss(kind) + getCuttingReportCss() + "</style></head><body><div class='actions'><button type='button' onclick='window.close()'>返回修改</button><button type='button' class='print' onclick='window.print()'>打印报表</button></div><div class='spacer'></div>" + bodyHtml + getReportFooter(config, kind) + (afterFooterHtml || "") + "</body></html>";
 }
 
 function normalizeCuttingAdvice(snapshot) {
@@ -289,6 +315,7 @@ function createBaseData(snapshot, config) {
     tileColor: String(snapshot.tileColor || "").trim(),
     steelCategory: String(snapshot.steelCategory || "").trim(),
     galvanizingProcess: String(snapshot.galvanizingProcess || "").trim(),
+    deliveryMethod: String(snapshot.deliveryMethod || "").trim(),
     remark: String(snapshot.remark || "").trim(),
     logoHtml: getLogoHtml(snapshot, config),
     cuttingAdvice: normalizeCuttingAdvice(snapshot)
@@ -312,7 +339,7 @@ function buildFullReport(data, config) {
   }, 6);
   var widthValue = Number(config.basics.fixedWidth);
   var profileText = Number.isFinite(widthValue) ? Math.round(widthValue * 1000) + " 型" : "主瓦";
-  var body = "<div class='header'><h1>" + escapeHtml(template.mainTitle) + "</h1><p class='date'>" + getCompanyDateLine(config, data.dateStr) + "</p><div class='meta'>" + buildReportMeta(data) + "</div><div class='logo'>" + data.logoHtml + "</div></div>" +
+  var body = "<div class='header'><h1>" + escapeHtml(template.mainTitle) + "</h1><p class='date'>" + getCompanyDateLine(config, data.dateStr) + "</p><div class='meta'>" + buildFullReportMeta(data) + "</div><div class='logo'>" + data.logoHtml + "</div></div>" +
     buildRemarkHtml(data) +
     "<div class='content'><div><div class='section'><h2>一、主瓦汇总（" + escapeHtml(profileText) + "）</h2><table><thead><tr><th>长度</th><th>实裁节数</th><th>数量</th><th>单项面积</th></tr></thead><tbody>" + mainRowsHtml +
     "<tr class='sum main-qty-total'><td colspan='2'>数量合计</td><td>" + formatTrimFixed(data.qtyTotal, 0) + "</td><td></td></tr><tr class='sum'><td colspan='3'>总面积合计</td><td>" + formatTrimFixed(data.areaTotal, 4) + "</td></tr><tr class='sum'><td colspan='3'>主瓦单价</td><td>" + (Number.isFinite(data.unitPrice) ? formatMoney(data.unitPrice) : "未填写") + "</td></tr><tr class='sum'><td colspan='3'>主瓦总金额</td><td>" + formatMoney(data.mainAmount) + "</td></tr></tbody></table></div></div>" +

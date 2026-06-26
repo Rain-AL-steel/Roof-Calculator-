@@ -46,6 +46,42 @@ describe("report service", function () {
     }
   });
 
+  it("prints full report metadata in order and uses the full footer signature layout", function () {
+    var report = buildPreferredReport(makeSnapshot({
+      steelCategory: "友发",
+      galvanizingProcess: "镀锌工艺：双镀锌",
+      deliveryMethod: "自提"
+    }), cloneConfig());
+    var customerIndex = report.html.indexOf("客户：测试客户");
+    var colorIndex = report.html.indexOf("颜色：枣红色");
+    var steelIndex = report.html.indexOf("钢材类别：友发");
+    var processIndex = report.html.indexOf("镀锌工艺：双镀锌");
+    var deliveryIndex = report.html.indexOf("配送方式：自提");
+
+    expect(report.data.deliveryMethod).toBe("自提");
+    expect(customerIndex).toBeGreaterThan(-1);
+    expect(colorIndex).toBeGreaterThan(customerIndex);
+    expect(steelIndex).toBeGreaterThan(colorIndex);
+    expect(processIndex).toBeGreaterThan(steelIndex);
+    expect(deliveryIndex).toBeGreaterThan(processIndex);
+    expect(report.html).not.toContain("工艺：镀锌工艺：双镀锌");
+    expect(report.html).toContain("class='sign-address'");
+    expect(report.html).toContain("class='sign-phone'");
+    expect(report.html).toContain("class='sign-right'");
+  });
+
+  it("omits blank full report optional metadata", function () {
+    var report = buildPreferredReport(makeSnapshot({
+      steelCategory: "",
+      galvanizingProcess: "",
+      deliveryMethod: ""
+    }), cloneConfig());
+
+    expect(report.html).not.toContain("钢材类别：");
+    expect(report.html).not.toContain("镀锌工艺：");
+    expect(report.html).not.toContain("配送方式：");
+  });
+
   it("omits the remark row when remark is blank", function () {
     var report = buildPreferredReport(makeSnapshot({ remark: "   " }), cloneConfig());
     expect(report.html).not.toContain("备注：");

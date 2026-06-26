@@ -75,6 +75,7 @@ export function initShippingPage(options) {
   var tileColorInput = document.getElementById("tileColor");
   var steelCategoryInput = document.getElementById("steelCategory");
   var galvanizingProcessInput = document.getElementById("galvanizingProcess");
+  var deliveryMethodInput = document.getElementById("deliveryMethod");
   var deliveryAddressInput = document.getElementById("deliveryAddress");
   var completionMonthInput = document.getElementById("completionMonth");
   var orderRemarkInput = document.getElementById("orderRemark");
@@ -1007,6 +1008,7 @@ export function initShippingPage(options) {
       tileColor: tileColorInput.value.trim(),
       steelCategory: steelCategoryInput ? steelCategoryInput.value.trim() : "",
       galvanizingProcess: galvanizingProcessInput ? galvanizingProcessInput.value.trim() : "",
+      deliveryMethod: deliveryMethodInput ? deliveryMethodInput.value.trim() : "",
       deliveryAddress: deliveryAddressInput ? deliveryAddressInput.value.trim() : "",
       completionMonth: completionMonthInput ? completionMonthInput.value.trim() : "",
       remark: orderRemarkInput ? orderRemarkInput.value.trim() : "",
@@ -1030,6 +1032,7 @@ export function initShippingPage(options) {
       tileColor: snapshot.tileColor,
       steelCategory: snapshot.steelCategory,
       galvanizingProcess: snapshot.galvanizingProcess,
+      deliveryMethod: snapshot.deliveryMethod,
       deliveryAddress: snapshot.deliveryAddress,
       completionMonth: snapshot.completionMonth,
       remark: snapshot.remark,
