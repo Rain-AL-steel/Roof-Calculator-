@@ -65,9 +65,23 @@ describe("report service", function () {
     expect(processIndex).toBeGreaterThan(steelIndex);
     expect(deliveryIndex).toBeGreaterThan(processIndex);
     expect(report.html).not.toContain("工艺：镀锌工艺：双镀锌");
+    expect(report.html).toContain(".meta{position:static;margin-top:7px;margin-right:170px;");
+    expect(report.html).toContain("gap:4px 14px;align-items:baseline");
+    expect(report.html).toContain(".meta-customer-line{display:flex;flex-wrap:wrap;");
+    expect(report.html).not.toContain(".meta-customer-line{display:grid;grid-template-columns:repeat(3");
+    expect(report.html).toContain("grid-template-areas:'address signature' 'phone date'");
+    expect(report.html).toContain(".sign-signature{grid-area:signature;align-self:end;");
     expect(report.html).toContain("class='sign-address'");
+    expect(report.html).toContain("class='sign-signature'");
     expect(report.html).toContain("class='sign-phone'");
-    expect(report.html).toContain("class='sign-right'");
+    expect(report.html).toContain("class='sign-date'");
+
+    var signStart = report.html.indexOf("<div class='sign-row'>");
+    var signEnd = report.html.indexOf("</div></div>", signStart);
+    var signHtml = report.html.slice(signStart, signEnd);
+    expect(signHtml.indexOf("class='sign-signature'")).toBeGreaterThan(signHtml.indexOf("class='sign-address'"));
+    expect(signHtml.indexOf("class='sign-phone'")).toBeGreaterThan(signHtml.indexOf("class='sign-signature'"));
+    expect(signHtml.indexOf("class='sign-date'")).toBeGreaterThan(signHtml.indexOf("class='sign-phone'"));
   });
 
   it("omits blank full report optional metadata", function () {

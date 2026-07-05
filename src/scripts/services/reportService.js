@@ -88,7 +88,7 @@ function getReportFooter(config, kind) {
   var addressLine = escapeHtml(template.addressLabel || "地址") + "：" + escapeHtml(basics.address || "");
   var phoneLine = escapeHtml(template.phoneLabel || "电话") + "：" + escapeHtml(basics.phone || "");
   if (kind === "full") {
-    return "<div class='sign'><p class='note'>温馨提示：" + escapeHtml(template.warmTip || "") + "</p><div class='sign-row'><p class='sign-address'>" + addressLine + "</p><p class='sign-phone'>" + phoneLine + "</p><div class='sign-right'><p>" + escapeHtml(template.signatureLabel || "") + "</p><p>" + escapeHtml(template.receiptDateLabel || "") + "</p></div></div></div>";
+    return "<div class='sign'><p class='note'>温馨提示：" + escapeHtml(template.warmTip || "") + "</p><div class='sign-row'><p class='sign-address'>" + addressLine + "</p><p class='sign-signature'>" + escapeHtml(template.signatureLabel || "") + "</p><p class='sign-phone'>" + phoneLine + "</p><p class='sign-date'>" + escapeHtml(template.receiptDateLabel || "") + "</p></div></div>";
   }
   return "<div class='sign'><p class='note'>温馨提示：" + escapeHtml(template.warmTip || "") + "</p><div class='sign-row'><div><p>" + addressLine + "</p><p>" + phoneLine + "</p></div><div><p>" + escapeHtml(template.signatureLabel || "") + "</p><p>" + escapeHtml(template.receiptDateLabel || "") + "</p></div></div></div>";
 }
@@ -118,9 +118,9 @@ function getSharedReportCss(kind) {
       ".date{text-align:center;color:#555;margin:5px 0 0;font-size:15px;font-weight:800}",
       ".logo{position:absolute;right:0;top:0;width:205px;height:86px;display:flex;align-items:center;justify-content:flex-end}",
       ".logo img{max-width:205px;max-height:86px;object-fit:contain}",
-      ".meta{position:static;margin-top:7px;margin-right:230px;font-size:15px;font-weight:900;text-align:left}",
-      ".meta-customer-line{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 18px;align-items:start}",
-      ".meta-customer-line span{display:block;min-width:0;line-height:1.28;white-space:normal;overflow-wrap:anywhere}",
+      ".meta{position:static;margin-top:7px;margin-right:170px;font-size:15px;font-weight:900;text-align:left}",
+      ".meta-customer-line{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}",
+      ".meta-customer-line span{display:inline-block;flex:0 0 auto;min-width:0;line-height:1.28;white-space:nowrap;overflow-wrap:normal}",
       ".meta div{white-space:normal;overflow:visible;text-overflow:clip}",
       ".remark{margin:0 0 9px;border:1px solid #9ca69d;background:#f8faf8;padding:7px 9px;font-size:14px;font-weight:900;line-height:1.35}",
       ".content{display:grid;grid-template-columns:minmax(0,45.2%) minmax(0,54.8%);gap:6mm;align-items:start}",
@@ -134,12 +134,12 @@ function getSharedReportCss(kind) {
       ".grand{margin-top:11px;border-top:3px solid #1f261f;border-bottom:3px solid #1f261f;padding:10px 3px 10px 0;text-align:right;font-size:28px;line-height:1.1;font-weight:900}",
       ".sign{margin-top:10px;border-top:1px solid #c8cec9;padding-top:9px}",
       ".note{margin:0 0 10px;text-align:center;font-size:14px;font-weight:900;line-height:1.45}",
-      ".sign-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,42%);grid-template-rows:auto auto;gap:2px 28px;font-size:14px;font-weight:800;line-height:1.65;align-items:start}",
+      ".sign-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,42%);grid-template-areas:'address signature' 'phone date';gap:0 28px;font-size:14px;font-weight:800;line-height:1.65;align-items:start}",
       ".sign-row p{margin:0}",
-      ".sign-address{grid-column:1;grid-row:1}",
-      ".sign-phone{grid-column:1;grid-row:2}",
-      ".sign-right{grid-column:2;grid-row:2;align-self:start;display:grid;gap:2px;min-width:0}",
-      ".sign-right p{white-space:nowrap}",
+      ".sign-address{grid-area:address;align-self:start}",
+      ".sign-signature{grid-area:signature;align-self:end;white-space:nowrap}",
+      ".sign-phone{grid-area:phone}",
+      ".sign-date{grid-area:date;white-space:nowrap}",
       "@media print{.actions,.spacer{display:none!important}.header{margin-top:0}}"
     ].join("");
   }
