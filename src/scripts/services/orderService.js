@@ -3,6 +3,8 @@ import { deleteOrderFromApi, fetchOrdersFromApi, isApiConfigured, saveOrderToApi
 
 export const ORDER_STORAGE_KEY = "erp_orders_v1";
 export const BACKUP_META_STORAGE_KEY = "erp_backup_meta_v1";
+export const PENDING_ORDER_MUTATIONS_STORAGE_KEY = "erp_pending_order_mutations_v1";
+export const ORDER_SYNC_STATE_EVENT = "erp-sync-state-change";
 export const EXPORT_APP_NAME = "resin-tile-order-tool";
 export const EXPORT_VERSION = 2;
 
@@ -25,6 +27,134 @@ function safeParseJson(raw, fallback) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function createPersistenceResult(order, persistence, warning) {
+  return Object.assign({}, order || {}, {
+    order: order,
+    persistence: persistence,
+    pendingCount: loadPendingOrderMutations().length,
+    warning: String(warning || "")
+  });
+}
+
+export function loadPendingOrderMutations() {
+  var storage = getStorage();
+  var parsed = safeParseJson(storage ? storage.getItem(PENDING_ORDER_MUTATIONS_STORAGE_KEY) : "", []);
+  return (Array.isArray(parsed) ? parsed : []).filter(function (item) {
+    return item && (item.type === "create" || item.type === "update") && item.order;
+  });
+}
+
+function emitOrderSyncState() {
+  try {
+    if (typeof globalThis.dispatchEvent === "function" && typeof CustomEvent === "function") {
+      globalThis.dispatchEvent(new CustomEvent(ORDER_SYNC_STATE_EVENT, { detail: getOrderSyncState() }));
+    }
+  } catch (error) {
+    // Event delivery is optional in tests and non-browser runtimes.
+  }
+}
+
+function savePendingOrderMutations(items) {
+  var storage = getStorage();
+  var next = Array.isArray(items) ? items : [];
+  if (storage) storage.setItem(PENDING_ORDER_MUTATIONS_STORAGE_KEY, JSON.stringify(next));
+  emitOrderSyncState();
+  return next;
+}
+
+function getPendingOrderKey(order) {
+  return compactText(order && order.clientOrderId) || compactText(order && order.id) || compactText(order && order.orderNo);
+}
+
+function pendingMutationMatchesOrder(mutation, order) {
+  var mutationOrder = mutation && mutation.order ? mutation.order : {};
+  var keys = [
+    getPendingOrderKey(mutationOrder),
+    compactText(mutationOrder.id),
+    compactText(mutationOrder.clientOrderId),
+    compactText(mutationOrder.orderNo)
+  ].filter(Boolean);
+  var orderKeys = [
+    getPendingOrderKey(order),
+    compactText(order && order.id),
+    compactText(order && order.clientOrderId),
+    compactText(order && order.orderNo)
+  ].filter(Boolean);
+  return keys.some(function (key) { return orderKeys.indexOf(key) !== -1; });
+}
+
+function queuePendingOrderMutation(type, order, targetId, error) {
+  var normalized = normalizeOrder(order);
+  var list = loadPendingOrderMutations();
+  var index = list.findIndex(function (item) { return pendingMutationMatchesOrder(item, normalized); });
+  var existing = index >= 0 ? list[index] : null;
+  var next = {
+    id: existing && existing.id ? existing.id : "pending-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+    type: existing && existing.type === "create" ? "create" : type,
+    targetId: compactText(targetId) || compactText(existing && existing.targetId) || normalized.id,
+    order: normalized,
+    createdAt: compactText(existing && existing.createdAt) || nowIso(),
+    updatedAt: nowIso(),
+    attempts: Number(existing && existing.attempts || 0) + 1,
+    lastError: error && error.message ? String(error.message) : String(error || "同步失败")
+  };
+  if (index >= 0) list[index] = next;
+  else list.push(next);
+  savePendingOrderMutations(list);
+  saveBackupMeta({ lastSyncError: next.lastError, lastSyncAttemptAt: nowIso() });
+  return next;
+}
+
+function removePendingOrderMutation(mutationId) {
+  return savePendingOrderMutations(loadPendingOrderMutations().filter(function (item) {
+    return item.id !== mutationId;
+  }));
+}
+
+function removePendingMutationsForOrder(order) {
+  return savePendingOrderMutations(loadPendingOrderMutations().filter(function (item) {
+    return !pendingMutationMatchesOrder(item, order);
+  }));
+}
+
+function updatePendingMutationFailure(mutation, error) {
+  var list = loadPendingOrderMutations();
+  var index = list.findIndex(function (item) { return item.id === mutation.id; });
+  if (index < 0) return;
+  list[index] = Object.assign({}, list[index], {
+    attempts: Number(list[index].attempts || 0) + 1,
+    updatedAt: nowIso(),
+    lastError: error && error.message ? String(error.message) : String(error || "同步失败")
+  });
+  savePendingOrderMutations(list);
+  saveBackupMeta({ lastSyncError: list[index].lastError, lastSyncAttemptAt: nowIso() });
+}
+
+export function getOrderSyncState() {
+  var pendingCount = loadPendingOrderMutations().length;
+  var meta = loadBackupMeta();
+  var state = !isApiConfigured() ? "local-only" : (pendingCount ? "local-pending" : (meta.lastSyncError ? "connection-error" : "server"));
+  return {
+    state: state,
+    pendingCount: pendingCount,
+    lastSyncedAt: compactText(meta.lastSyncedAt),
+    lastError: compactText(meta.lastSyncError)
+  };
+}
+
+function markSyncSuccess() {
+  saveBackupMeta({ lastSyncedAt: nowIso(), lastSyncError: "", lastSyncAttemptAt: nowIso() });
+  emitOrderSyncState();
+}
+
+function markSyncFailure(error) {
+  saveBackupMeta({
+    lastSyncError: error && error.message ? String(error.message) : String(error || "连接服务器失败"),
+    lastSyncAttemptAt: nowIso()
+  });
+  emitOrderSyncState();
 }
 
 export function getDateOnly(value) {
@@ -408,17 +538,38 @@ function upsertOrderToLocal(order, options) {
   }));
 }
 
-function syncOrdersFromApi(metaPatch) {
+function mergeServerOrdersWithPending(serverOrders) {
+  var merged = (Array.isArray(serverOrders) ? serverOrders : []).map(normalizeOrder);
+  loadPendingOrderMutations().forEach(function (mutation) {
+    var pendingOrder = normalizeOrder(mutation.order);
+    merged = merged.filter(function (order) {
+      return !pendingMutationMatchesOrder(mutation, order);
+    });
+    merged.unshift(pendingOrder);
+  });
+  return sortOrders(merged);
+}
+
+function fetchServerOrders(metaPatch) {
   return fetchOrdersFromApi().then(function (payload) {
     var apiOrders = readOrdersPayload(payload);
     if (!apiOrders) throw new Error("API orders payload is invalid.");
-    return saveOrdersToLocal(apiOrders, Object.assign({ lastSyncedAt: nowIso() }, metaPatch || {}));
+    var serverOrders = apiOrders.map(normalizeOrder);
+    var merged = mergeServerOrdersWithPending(serverOrders);
+    saveOrdersToLocal(merged, Object.assign({ lastSyncedAt: nowIso(), lastSyncError: "" }, metaPatch || {}));
+    markSyncSuccess();
+    return { serverOrders: serverOrders, mergedOrders: merged };
   });
+}
+
+function syncOrdersFromApi(metaPatch) {
+  return fetchServerOrders(metaPatch).then(function (result) { return result.mergedOrders; });
 }
 
 function resolveApiOrderReference(orderId) {
   var requestedId = compactText(orderId);
-  return syncOrdersFromApi().then(function (orders) {
+  return fetchServerOrders().then(function (result) {
+    var orders = result.serverOrders;
     var matchedOrder = findOrderByIdentifier(orders, requestedId);
     var resolvedId = matchedOrder ? matchedOrder.id : requestedId;
     return {
@@ -457,7 +608,8 @@ function resolveApiOrderForDelete(orderId, orderHint) {
   var orderNo = compactText(hint.orderNo);
   var clientOrderId = compactText(hint.clientOrderId);
 
-  return syncOrdersFromApi().then(function (orders) {
+  return fetchServerOrders().then(function (result) {
+    var orders = result.serverOrders;
     var matchedOrder = findApiOrderForDelete(orders, requestedId, hint);
     if (!matchedOrder) {
       var error = new Error("API order id could not be resolved before delete.");
@@ -512,13 +664,20 @@ export function loadOrdersWithApiFallback() {
 
   return syncOrdersFromApi().catch(function (error) {
     console.warn("订单 API 读取失败，已使用本地 localStorage 数据。", error);
+    markSyncFailure(error);
     return loadOrders();
   });
 }
 
 export function upsertOrderWithApiFallback(order) {
   var localCandidate = normalizeOrder(Object.assign({}, order, { updatedAt: nowIso() }));
-  if (!isApiConfigured()) return Promise.resolve(upsertOrderToLocal(localCandidate, { touchUpdatedAt: false }));
+  if (!isApiConfigured()) {
+    return Promise.resolve(createPersistenceResult(
+      upsertOrderToLocal(localCandidate, { touchUpdatedAt: false }),
+      "local-only",
+      ""
+    ));
+  }
 
   return saveOrderToApi(localCandidate).then(function (payload) {
     var savedOrder = normalizeOrder(readOrderPayload(payload, localCandidate));
@@ -526,10 +685,14 @@ export function upsertOrderWithApiFallback(order) {
       touchUpdatedAt: false,
       metaPatch: { lastSyncedAt: nowIso() }
     });
-    return savedOrder;
+    removePendingMutationsForOrder(savedOrder);
+    markSyncSuccess();
+    return createPersistenceResult(savedOrder, "server", "");
   }).catch(function (error) {
-    console.warn("订单 API 保存失败，已回退到本地 localStorage 保存。", error);
-    return upsertOrderToLocal(localCandidate, { touchUpdatedAt: false });
+    console.warn("订单 API 保存失败，已加入本地待同步队列。", error);
+    var localOrder = upsertOrderToLocal(localCandidate, { touchUpdatedAt: false });
+    queuePendingOrderMutation("create", localOrder, localOrder.id, error);
+    return createPersistenceResult(localOrder, "local-pending", "服务器暂不可用，订单已保存在本机并等待同步。");
   });
 }
 
@@ -541,7 +704,22 @@ export function updateOrderWithApiFallback(orderId, order) {
     clientOrderId: compactText(order && order.clientOrderId),
     updatedAt: nowIso()
   }));
-  if (!isApiConfigured()) return Promise.resolve(upsertOrderToLocal(localFallbackCandidate, { touchUpdatedAt: false }));
+  if (!isApiConfigured()) {
+    return Promise.resolve(createPersistenceResult(
+      upsertOrderToLocal(localFallbackCandidate, { touchUpdatedAt: false }),
+      "local-only",
+      ""
+    ));
+  }
+
+  var existingPending = loadPendingOrderMutations().find(function (item) {
+    return pendingMutationMatchesOrder(item, localFallbackCandidate);
+  });
+  if (existingPending && existingPending.type === "create") {
+    var pendingLocalOrder = upsertOrderToLocal(localFallbackCandidate, { touchUpdatedAt: false });
+    queuePendingOrderMutation("create", pendingLocalOrder, existingPending.targetId, new Error("订单仍在等待首次同步。"));
+    return Promise.resolve(createPersistenceResult(pendingLocalOrder, "local-pending", "订单更新已保存在本机，将在首次同步时一并提交。"));
+  }
 
   return resolveApiOrderReference(requestedId).then(function (reference) {
     var apiOrder = reference.order || {};
@@ -566,21 +744,93 @@ export function updateOrderWithApiFallback(orderId, order) {
         touchUpdatedAt: false,
         metaPatch: { lastSyncedAt: nowIso() }
       });
-      return savedOrder;
+      removePendingMutationsForOrder(savedOrder);
+      markSyncSuccess();
+      return createPersistenceResult(savedOrder, "server", "");
     }).catch(function (error) {
-      console.warn("Order API update failed; using localStorage fallback.", {
+      console.warn("Order API update failed; queued for synchronization.", {
         orderId: reference.orderId,
         requestedId: requestedId,
         reason: getErrorReason(error)
       });
-      return replaceOrderToLocal(localCandidate, reference.identifiers, { touchUpdatedAt: false });
+      var localOrder = replaceOrderToLocal(localCandidate, reference.identifiers, { touchUpdatedAt: false });
+      queuePendingOrderMutation("update", localOrder, reference.orderId, error);
+      return createPersistenceResult(localOrder, "local-pending", "服务器暂不可用，修改已保存在本机并等待同步。");
     });
   }).catch(function (error) {
-    console.warn("Order API id resolution failed; using localStorage fallback.", {
+    console.warn("Order API id resolution failed; queued for synchronization.", {
       orderId: requestedId,
       reason: getErrorReason(error)
     });
-    return upsertOrderToLocal(localFallbackCandidate, { touchUpdatedAt: false });
+    var localOrder = upsertOrderToLocal(localFallbackCandidate, { touchUpdatedAt: false });
+    queuePendingOrderMutation("update", localOrder, requestedId, error);
+    return createPersistenceResult(localOrder, "local-pending", "服务器暂不可用，修改已保存在本机并等待同步。");
+  });
+}
+
+function getPendingMutationServerMatch(serverOrders, mutation) {
+  var pendingOrder = mutation && mutation.order ? mutation.order : {};
+  return (Array.isArray(serverOrders) ? serverOrders : []).find(function (order) {
+    return pendingMutationMatchesOrder(mutation, order) || (
+      compactText(pendingOrder.orderNo) && compactText(order && order.orderNo) === compactText(pendingOrder.orderNo)
+    );
+  }) || null;
+}
+
+function syncPendingMutation(mutation) {
+  var pendingOrder = normalizeOrder(mutation.order);
+  if (mutation.type === "create") {
+    return saveOrderToApi(pendingOrder);
+  }
+  return fetchOrdersFromApi().then(function (payload) {
+    var serverOrders = readOrdersPayload(payload);
+    if (!serverOrders) throw new Error("API orders payload is invalid.");
+    var match = getPendingMutationServerMatch(serverOrders.map(normalizeOrder), mutation);
+    if (!match) return saveOrderToApi(pendingOrder);
+    return updateOrderToApi(match.id, Object.assign({}, pendingOrder, {
+      id: match.id,
+      orderNo: match.orderNo || pendingOrder.orderNo,
+      clientOrderId: match.clientOrderId || pendingOrder.clientOrderId
+    }));
+  });
+}
+
+export function retryPendingOrderSync() {
+  if (!isApiConfigured()) {
+    emitOrderSyncState();
+    return Promise.resolve(getOrderSyncState());
+  }
+  var pending = loadPendingOrderMutations().slice();
+  var sequence = Promise.resolve();
+  pending.forEach(function (mutation) {
+    sequence = sequence.then(function () {
+      return syncPendingMutation(mutation).then(function (payload) {
+        var savedOrder = normalizeOrder(readOrderPayload(payload, mutation.order));
+        replaceOrderToLocal(savedOrder, [
+          mutation.targetId,
+          mutation.order && mutation.order.id,
+          mutation.order && mutation.order.clientOrderId,
+          savedOrder.id,
+          savedOrder.clientOrderId
+        ], {
+          touchUpdatedAt: false,
+          metaPatch: { lastSyncedAt: nowIso() }
+        });
+        removePendingOrderMutation(mutation.id);
+      }).catch(function (error) {
+        updatePendingMutationFailure(mutation, error);
+      });
+    });
+  });
+  return sequence.then(function () {
+    return syncOrdersFromApi();
+  }).catch(function (error) {
+    markSyncFailure(error);
+    return loadOrders();
+  }).then(function () {
+    if (!loadPendingOrderMutations().length) markSyncSuccess();
+    else emitOrderSyncState();
+    return getOrderSyncState();
   });
 }
 
@@ -639,19 +889,17 @@ function getUniqueOrderIds(orders) {
 export function clearOrdersWithApiFallback() {
   if (!isApiConfigured()) return Promise.resolve(clearOrders());
 
-  return syncOrdersFromApi().then(function (orders) {
-    var apiOrders = getUniqueOrderIds(orders).map(function (id) {
-      return findOrderByIdentifier(orders, id);
+  return fetchServerOrders().then(function (result) {
+    var apiOrders = getUniqueOrderIds(result.serverOrders).map(function (id) {
+      return findOrderByIdentifier(result.serverOrders, id);
     }).filter(Boolean);
     var sequence = Promise.resolve();
+    var failedOrders = [];
 
     apiOrders.forEach(function (order) {
       sequence = sequence.then(function () {
-        return deleteOrderFromApi(order.id).then(function () {
-          removeOrdersFromLocalByIdentifiers(getOrderIdentifiers(order), {
-            lastSyncedAt: nowIso()
-          });
-        }).catch(function (error) {
+        return deleteOrderFromApi(order.id).catch(function (error) {
+          failedOrders.push(order);
           console.warn("Order API bulk delete failed; local cache was not removed for this order.", {
             orderId: order.id,
             reason: getErrorReason(error)
@@ -661,7 +909,8 @@ export function clearOrdersWithApiFallback() {
     });
 
     return sequence.then(function () {
-      return loadOrders();
+      savePendingOrderMutations([]);
+      return saveOrdersToLocal(failedOrders, { lastSyncedAt: nowIso(), lastSyncError: failedOrders.length ? "部分订单删除失败" : "" });
     });
   }).catch(function (error) {
     console.warn("Order API bulk clear read failed; local cache was not cleared.", {
@@ -672,6 +921,7 @@ export function clearOrdersWithApiFallback() {
 }
 
 export function clearOrders() {
+  savePendingOrderMutations([]);
   return saveOrders([]);
 }
 

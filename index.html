@@ -7,9 +7,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="ERP计算器" />
   <meta name="description" content="树脂瓦、配件、钢铁材料和其他瓦的静态出货计算与打印工具。" />
-  <meta name="theme-color" content="#fff8ef" />
-  <title>ERP计算器</title>
-    <link rel="stylesheet" href="./src/styles/main.css" />
+  <meta name="theme-color" content="#176b57" />
+  <title>红波企业 ERP</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23176b57'/%3E%3Cpath d='M14 31 32 16l18 15v19H14V31Z' fill='none' stroke='white' stroke-width='5' stroke-linejoin='round'/%3E%3Cpath d='M24 50V35h16v15' fill='none' stroke='white' stroke-width='5'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./src/styles/main.css" />
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -151,32 +152,31 @@
     </section>
 
     <header class="workspace-header" id="workspaceHeader" hidden>
-      <div class="workspace-title">
+      <div class="workspace-bar">
         <div class="brand-block">
           <div class="brand-mark" aria-hidden="true"><svg class="ui-icon"><use href="#icon-layers"></use></svg></div>
-          <div>
-            <p class="eyebrow">v2.0 ERP 订单工具</p>
-            <h1>ERP计算器</h1>
-          </div>
+          <div class="brand-copy"><strong>红波计算机</strong><span>企业订单工作台</span></div>
         </div>
+        <nav class="workspace-tabs" aria-label="业务模块">
+          <button type="button" class="workspace-tab active" data-app-view="dashboardView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg><span>经营首页</span></button>
+          <button type="button" class="workspace-tab" data-app-view="shippingView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>新建订单</span></button>
+          <button type="button" class="workspace-tab" data-app-view="historyView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg><span>订单记录</span></button>
+        </nav>
         <div class="workspace-controls">
-          <button type="button" class="btn btn-neutral" id="adminTopToggle"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg><span>系统管理</span></button>
-          <button type="button" class="btn btn-neutral" id="logoutButton"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg><span>退出登录</span></button>
+          <button type="button" class="sync-status" id="syncStatusButton" aria-label="查看同步状态" title="查看同步状态"><span class="sync-status-dot" aria-hidden="true"></span><span><strong id="syncStatusText">正在检查</strong><small id="syncStatusMeta">—</small></span></button>
+          <button type="button" class="icon-control" id="adminTopToggle" aria-label="系统管理" title="系统管理"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg></button>
+          <div class="account-summary"><span id="currentUserName">当前用户</span><button type="button" id="logoutButton">退出</button></div>
         </div>
       </div>
-      <nav class="workspace-tabs" aria-label="业务模块">
-        <button type="button" class="workspace-tab active" data-app-view="dashboardView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg><span>首页</span></button>
-        <button type="button" class="workspace-tab" data-app-view="shippingView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>打单计算机</span></button>
-        <button type="button" class="workspace-tab" data-app-view="historyView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg><span>订单详细</span></button>
-      </nav>
     </header>
 
     <section id="dashboardView" class="business-view dashboard-view" hidden>
       <div class="dashboard-grid">
         <section class="dashboard-panel dashboard-hero">
-          <div>
-            <p class="eyebrow">单月概览</p>
+          <div class="dashboard-summary-head">
+            <p class="eyebrow">经营摘要</p>
             <h2 id="dashboardDateTitle">本月订单</h2>
+            <p>快速查看订单规模与累计经营数据。</p>
             <div class="month-controls" aria-label="切换统计月份">
               <button type="button" class="month-nav-btn" id="dashboardPrevMonth">上一月</button>
               <label class="month-input-wrap">
@@ -200,20 +200,14 @@
               <span>本月总面积</span>
               <strong id="todayOrderArea">0.0000</strong>
             </div>
-          </div>
-        </section>
-
-        <section class="dashboard-panel">
-          <div class="section-head compact">
-            <div>
-              <h2>历史累计</h2>
-              <p class="subtext">统计当前订单数据。</p>
+            <div class="metric-card">
+              <span>历史订单数</span>
+              <strong id="totalOrderCount">0</strong>
             </div>
           </div>
-          <div class="metric-list">
-            <div><span>历史订单数</span><strong id="totalOrderCount">0</strong></div>
-            <div><span>历史订单金额</span><strong id="totalOrderAmount">0.00</strong></div>
-            <div><span>历史总面积</span><strong id="totalOrderArea">0.0000</strong></div>
+          <div class="dashboard-lifetime">
+            <span>累计金额 <strong id="totalOrderAmount">0.00</strong> 元</span>
+            <span>累计面积 <strong id="totalOrderArea">0.0000</strong> ㎡</span>
           </div>
         </section>
       </div>
@@ -269,29 +263,37 @@
               </div>
               <div class="empty-note" id="trendEmpty">暂无趋势数据</div>
             </div>
-            <div class="trend-pie-card" aria-label="订单分类金额饼图">
-              <div class="trend-pie-head">
-                <div>
-                  <h3>分类金额</h3>
-                  <p id="trendPieSubtitle">瓦片、配件、钢铁材料占比</p>
-                </div>
-                <button type="button" class="trend-pie-toggle" id="trendPieTileToggle" aria-pressed="false" title="只显示瓦片数据">瓦</button>
-              </div>
-              <div class="trend-tile-pie-controls" id="trendTilePieViewControls" aria-label="瓦片统计维度" hidden>
-                <button type="button" class="trend-tile-pie-btn active" data-trend-tile-pie-view="brand">品牌</button>
-                <button type="button" class="trend-tile-pie-btn" data-trend-tile-pie-view="color">颜色</button>
-              </div>
-              <div class="trend-pie-body">
-                <svg id="orderPieChart" class="trend-pie-chart" viewBox="0 0 160 160" role="img" aria-label="订单分类金额饼图"></svg>
-                <div class="trend-pie-legend" id="orderPieLegend"></div>
-              </div>
-              <div class="empty-note trend-pie-empty" id="orderPieEmpty">暂无统计数据</div>
-            </div>
           </div>
         </div>
       </section>
 
-      <section class="dashboard-panel order-map-card" aria-label="订单位置地图">
+      <section class="dashboard-panel dashboard-secondary">
+        <div class="dashboard-secondary-head">
+          <div><h2>经营辅助</h2><p>按需查看分类构成或配送位置。</p></div>
+          <div class="secondary-switch" role="tablist" aria-label="经营辅助视图">
+            <button type="button" class="secondary-tab active" data-dashboard-secondary="analysis" role="tab" aria-selected="true">分类分析</button>
+            <button type="button" class="secondary-tab" data-dashboard-secondary="map" role="tab" aria-selected="false">配送地图</button>
+          </div>
+        </div>
+        <div id="dashboardAnalysisPanel" class="dashboard-secondary-panel">
+          <div class="trend-pie-card" aria-label="订单分类金额饼图">
+            <div class="trend-pie-head">
+              <div><h3>分类金额</h3><p id="trendPieSubtitle">瓦片、配件、钢铁材料占比</p></div>
+              <button type="button" class="trend-pie-toggle" id="trendPieTileToggle" aria-pressed="false" title="只显示瓦片数据">瓦</button>
+            </div>
+            <div class="trend-tile-pie-controls" id="trendTilePieViewControls" aria-label="瓦片统计维度" hidden>
+              <button type="button" class="trend-tile-pie-btn active" data-trend-tile-pie-view="brand">品牌</button>
+              <button type="button" class="trend-tile-pie-btn" data-trend-tile-pie-view="color">颜色</button>
+            </div>
+            <div class="trend-pie-body">
+              <svg id="orderPieChart" class="trend-pie-chart" viewBox="0 0 160 160" role="img" aria-label="订单分类金额饼图"></svg>
+              <div class="trend-pie-legend" id="orderPieLegend"></div>
+            </div>
+            <div class="empty-note trend-pie-empty" id="orderPieEmpty">暂无统计数据</div>
+          </div>
+        </div>
+        <div id="dashboardMapPanel" class="dashboard-secondary-panel" hidden>
+      <section class="order-map-card" aria-label="订单位置地图">
         <div class="map-panel-head">
           <div>
             <h2>订单地图</h2>
@@ -305,6 +307,8 @@
             <p id="orderMapEmptyText">请在系统管理中启用地图并填写高德 Key。</p>
             <button type="button" class="map-retry-btn" id="orderMapRetry" hidden>重新加载地图</button>
           </div>
+        </div>
+      </section>
         </div>
       </section>
     </section>
@@ -322,19 +326,7 @@
         </div>
       </div>
 
-      <div class="settings-grid">
-        <div class="field">
-          <label for="globalSegmentInput">节长（米）</label>
-          <select id="globalSegmentInput"></select>
-        </div>
-        <div class="field">
-          <label>宽度（米）</label>
-          <div class="readonly-value" id="fixedWidthDisplay" aria-readonly="true">—</div>
-        </div>
-        <div class="field">
-          <label for="unitPrice">主瓦单价（元/㎡）</label>
-          <input id="unitPrice" type="number" inputmode="decimal" step="0.01" />
-        </div>
+      <div class="settings-grid settings-grid-core">
         <div class="field">
           <label for="orderDate">订单日期</label>
           <input id="orderDate" type="date" />
@@ -349,42 +341,36 @@
           <datalist id="tileColorOptions"></datalist>
         </div>
         <div class="field">
-          <label for="steelCategory">钢材类别</label>
-          <input id="steelCategory" type="text" autocomplete="off" placeholder="正大、友发、白管等" />
+          <label for="globalSegmentInput">节长（米）</label>
+          <select id="globalSegmentInput"></select>
         </div>
         <div class="field">
-          <label for="galvanizingProcess">镀锌工艺</label>
-          <input id="galvanizingProcess" type="text" autocomplete="off" value="双镀锌" />
+          <label for="unitPrice">主瓦单价（元/㎡）</label>
+          <input id="unitPrice" type="number" inputmode="decimal" step="0.01" />
         </div>
         <div class="field">
           <label for="deliveryMethod">配送方式</label>
           <select id="deliveryMethod">
             <option value="">请选择</option>
-            <option value="自提">自提</option>
-            <option value="包配送">包配送</option>
-            <option value="三轮车配送">三轮车配送</option>
           </select>
         </div>
-        <div class="field span-3">
-          <label for="deliveryAddress">收货地址</label>
-          <input id="deliveryAddress" type="text" autocomplete="off" placeholder="用于首页地图定位，请尽量填写省市区和详细地址" />
-        </div>
-        <div class="field">
-          <label for="completionMonth">建成年月</label>
-          <input id="completionMonth" type="month" />
-        </div>
-        <div class="field span-2">
-          <label for="orderRemark">备注</label>
-          <input id="orderRemark" type="text" autocomplete="off" placeholder="可填写收货、运输或临时说明" />
-        </div>
-        <div class="field">
-          <label for="logoUpload">报表 Logo</label>
-          <div class="logo-control">
-            <input class="file-input" id="logoUpload" type="file" accept="image/*" />
-            <button type="button" class="btn btn-neutral" id="clearLogo" disabled><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg><span>删除</span></button>
+      </div>
+      <div class="readonly-value" id="fixedWidthDisplay" aria-readonly="true" hidden>—</div>
+
+      <details class="order-advanced">
+        <summary><span><strong>更多订单信息</strong><small>钢材、地址、备注与报表 Logo</small></span><span aria-hidden="true">展开</span></summary>
+        <div class="settings-grid settings-grid-advanced">
+          <div class="field"><label for="steelCategory">钢材类别</label><input id="steelCategory" type="text" autocomplete="off" placeholder="正大、友发、白管等" /></div>
+          <div class="field"><label for="galvanizingProcess">镀锌工艺</label><select id="galvanizingProcess"><option value="">请选择</option></select></div>
+          <div class="field"><label for="completionMonth">建成年月</label><input id="completionMonth" type="month" /></div>
+          <div class="field span-3"><label for="deliveryAddress">收货地址</label><input id="deliveryAddress" type="text" autocomplete="off" placeholder="用于首页地图定位，请尽量填写省市区和详细地址" /></div>
+          <div class="field span-3"><label for="orderRemark">备注</label><input id="orderRemark" type="text" autocomplete="off" placeholder="可填写收货、运输或临时说明" /></div>
+          <div class="field span-3">
+            <label for="logoUpload">报表 Logo</label>
+            <div class="logo-control"><input class="file-input" id="logoUpload" type="file" accept="image/*" /><button type="button" class="btn btn-neutral" id="clearLogo" disabled><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg><span>删除</span></button></div>
           </div>
         </div>
-      </div>
+      </details>
 
       <datalist id="unitOptions"></datalist>
     </header>
@@ -396,8 +382,6 @@
         <button type="button" class="nav-tab" data-target="steelPanel"><svg class="ui-icon" aria-hidden="true"><use href="#icon-steel"></use></svg><span>钢铁材料</span></button>
         <button type="button" class="nav-tab" data-target="otherTilePanel"><svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg><span>其他瓦</span></button>
       </nav>
-      <button type="button" class="btn btn-primary" id="exportPdf"><svg class="ui-icon" aria-hidden="true"><use href="#icon-file"></use></svg><span>生成打印报表</span></button>
-      <button type="button" class="btn btn-soft" id="saveOrder"><svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg><span>保存记录</span></button>
     </div>
 
     <div class="main-layout">
@@ -438,6 +422,7 @@
             <button type="button" class="btn btn-soft" id="addAccessoryRowBottom"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg><span>手动新增配件</span></button>
             <button type="button" class="btn btn-danger" id="clearAccessories"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg><span>清空配件</span></button>
           </div>
+          <div class="line-column-head standard-columns" aria-hidden="true"><span>名称</span><span>数量</span><span>单位</span><span>单价</span><span>小计</span><span></span></div>
           <div class="line-list" id="accessoryRows"></div>
           <div class="empty-note">暂无配件数据</div>
           <div class="panel-total">配件总金额：<strong id="accAmountInline">0.00</strong> 元</div>
@@ -477,6 +462,7 @@
             <button type="button" class="btn btn-soft" id="steelAddTube"><svg class="ui-icon" aria-hidden="true"><use href="#icon-tube"></use></svg><span>加入方管</span></button>
             <button type="button" class="btn btn-soft" id="steelAddBolt"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bolt"></use></svg><span>加入螺丝</span></button>
           </div>
+          <div class="line-column-head standard-columns" aria-hidden="true"><span>名称</span><span>数量</span><span>单位</span><span>单价</span><span>小计</span><span></span></div>
           <div class="line-list" id="steelRows"></div>
           <div class="empty-note">暂无钢铁材料数据</div>
           <div class="panel-total">钢铁材料金额：<strong id="steelAmount">0.00</strong> 元</div>
@@ -500,6 +486,7 @@
           <div class="toolbar">
             <button type="button" class="btn btn-soft" id="addOtherTileRow"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg><span>手动新增其他瓦</span></button>
           </div>
+            <div class="line-column-head other-columns" aria-hidden="true"><span>名称</span><span>单片长度</span><span>片数</span><span>总长度</span><span>单位</span><span>单价</span><span>小计</span><span></span></div>
           <div class="line-list" id="otherTileRows"></div>
           <div class="empty-note">暂无其他瓦数据</div>
           <div class="panel-total">其他瓦金额：<strong id="otherTileAmount">0.00</strong> 元</div>
@@ -534,9 +521,18 @@
             <strong id="grandAmount">0.00</strong>
           </div>
         </div>
+        <div class="draft-tools">
+          <p class="draft-status" id="workingDraftStatus" role="status" aria-live="polite">草稿不会自动保存，请手动保存到本地文件</p>
+          <div class="draft-actions">
+            <button type="button" class="btn btn-soft compact-btn" id="exportWorkingDraft"><svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg><span>保存草稿</span></button>
+            <button type="button" class="btn btn-soft compact-btn" id="importWorkingDraft"><svg class="ui-icon" aria-hidden="true"><use href="#icon-upload"></use></svg><span>导入草稿</span></button>
+            <button type="button" class="btn btn-neutral compact-btn" id="clearWorkingDraft"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg><span>清空录入</span></button>
+            <input id="workingDraftFileInput" type="file" accept="application/json,.json" hidden />
+          </div>
+        </div>
         <div class="summary-actions">
-          <button type="button" class="btn btn-soft" id="saveOrderSide"><svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg><span>保存记录</span></button>
-          <button type="button" class="btn btn-primary" id="exportPdfSide"><svg class="ui-icon" aria-hidden="true"><use href="#icon-file"></use></svg><span>生成打印报表</span></button>
+          <button type="button" class="btn btn-primary" id="saveOrder"><svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg><span>保存订单</span></button>
+          <button type="button" class="btn btn-neutral" id="exportPdf"><svg class="ui-icon" aria-hidden="true"><use href="#icon-file"></use></svg><span>打印报表</span></button>
         </div>
       </aside>
     </div>
@@ -549,7 +545,6 @@
             <h1>订单详细</h1>
             <p>按日期、客户名称或位置查找订单。</p>
           </div>
-          <button type="button" class="btn btn-danger" id="clearAllOrders"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg><span>清空全部数据</span></button>
         </div>
         <div class="history-filters">
           <div class="field">
@@ -656,6 +651,15 @@
       <figcaption id="mapImageLightboxCaption"></figcaption>
     </figure>
   </div>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  <dialog class="app-confirm" id="appConfirmDialog" aria-labelledby="appConfirmTitle" aria-describedby="appConfirmMessage">
+    <form method="dialog" class="app-confirm-card">
+      <div class="app-confirm-icon" aria-hidden="true"><svg class="ui-icon"><use href="#icon-trash"></use></svg></div>
+      <div><h2 id="appConfirmTitle" data-confirm-title>确认操作</h2><p id="appConfirmMessage" data-confirm-message>确定继续吗？</p></div>
+      <div class="app-confirm-actions"><button type="button" class="btn btn-neutral" data-confirm-cancel>取消</button><button type="button" class="btn btn-danger" data-confirm-submit>确认</button></div>
+    </form>
+  </dialog>
 
   <script src="./runtime-config.js"></script>
   <script type="module" src="./src/scripts/app.js"></script>

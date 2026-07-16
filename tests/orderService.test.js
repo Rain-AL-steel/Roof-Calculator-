@@ -13,14 +13,17 @@ import {
   getOrderTrendByMode,
   getOrderTrend,
   getOrderStats,
+  getOrderSyncState,
   importOrdersFromPayload,
   deleteOrderWithApiFallback,
   loadOrders,
   loadOrdersWithApiFallback,
+  loadPendingOrderMutations,
   mergeOrders,
   normalizeOrder,
   paginateHistoryOrders,
   readImportPayload,
+  retryPendingOrderSync,
   updateOrderWithApiFallback,
   upsertOrder,
   upsertOrderWithApiFallback
@@ -1030,8 +1033,59 @@ describe("order service", function () {
     var saved = await upsertOrderWithApiFallback(makeOrder("local-save", "2026-05-26", 100));
 
     expect(saved.id).toBe("local-save");
+    expect(saved.persistence).toBe("local-pending");
+    expect(saved.pendingCount).toBe(1);
     expect(loadOrders()).toHaveLength(1);
     expect(loadOrders()[0].id).toBe("local-save");
+  });
+
+  it("preserves pending orders across server reads and syncs them when the API recovers", async function () {
+    useHttpApiRuntime(function () {
+      return Promise.reject(new Error("offline"));
+    });
+
+    var pendingResult = await upsertOrderWithApiFallback(makeOrder("pending-save", "2026-05-26", 100));
+    expect(pendingResult.persistence).toBe("local-pending");
+    expect(loadPendingOrderMutations()).toHaveLength(1);
+
+    var serverExisting = makeOrder("server-existing", "2026-05-25", 80);
+    var savedPending = null;
+    useHttpApiRuntime(function (url, options) {
+      if (options && options.method === "POST") {
+        var body = JSON.parse(options.body);
+        savedPending = Object.assign({}, body, {
+          id: "db-pending-save",
+          orderNo: "API-PENDING-1",
+          clientOrderId: body.id
+        });
+        return jsonResponse({ order: savedPending });
+      }
+      return jsonResponse({ orders: savedPending ? [serverExisting, savedPending] : [serverExisting] });
+    });
+
+    var mergedBeforeRetry = await loadOrdersWithApiFallback();
+    expect(mergedBeforeRetry.some(function (order) { return order.id === "pending-save"; })).toBe(true);
+    expect(mergedBeforeRetry.some(function (order) { return order.id === "server-existing"; })).toBe(true);
+
+    var state = await retryPendingOrderSync();
+    expect(state.pendingCount).toBe(0);
+    expect(state.state).toBe("server");
+    expect(loadPendingOrderMutations()).toHaveLength(0);
+    expect(loadOrders().some(function (order) { return order.id === "db-pending-save"; })).toBe(true);
+    expect(getOrderSyncState().lastError).toBe("");
+  });
+
+  it("clears local pending creates when an administrator clears all orders", async function () {
+    useHttpApiRuntime(function () { return Promise.reject(new Error("offline")); });
+    await upsertOrderWithApiFallback(makeOrder("pending-clear", "2026-05-26", 100));
+    expect(loadPendingOrderMutations()).toHaveLength(1);
+
+    useHttpApiRuntime(function () { return jsonResponse({ orders: [] }); });
+    var orders = await clearOrdersWithApiFallback();
+
+    expect(orders).toHaveLength(0);
+    expect(loadOrders()).toHaveLength(0);
+    expect(loadPendingOrderMutations()).toHaveLength(0);
   });
 
   it("deletes orders through the API before removing the local cache", async function () {

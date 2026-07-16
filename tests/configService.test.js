@@ -5,7 +5,8 @@ import {
   loadConfigWithApiFallback,
   normalizeConfig,
   saveConfig,
-  saveConfigWithApiFallback
+  saveConfigWithApiFallback,
+  validateConfig
 } from "../src/scripts/services/configService.js";
 import { clearApiAuth } from "../src/scripts/services/apiClient.js";
 
@@ -120,6 +121,58 @@ afterEach(function () {
 });
 
 describe("config service API fallback", function () {
+  it("adds default order select options when loading an older config", function () {
+    var config = normalizeConfig({
+      version: 1,
+      basics: {
+        companyName: "旧配置"
+      }
+    });
+
+    expect(config.basics.deliveryMethods).toEqual(defaultConfig.basics.deliveryMethods);
+    expect(config.basics.galvanizingProcesses).toEqual(defaultConfig.basics.galvanizingProcesses);
+  });
+
+  it("preserves custom order select values, sorting and enabled state", function () {
+    var config = normalizeConfig({
+      basics: {
+        deliveryMethods: [
+          { id: "delivery-van", value: "面包车配送", sort: 20, enabled: false },
+          { id: "delivery-self", value: "自提", sort: 10, enabled: true }
+        ],
+        galvanizingProcesses: [
+          { id: "galvanizing-custom", value: "热镀锌", sort: 30, enabled: true }
+        ]
+      }
+    });
+
+    expect(config.basics.deliveryMethods).toEqual([
+      { id: "delivery-van", value: "面包车配送", sort: 20, enabled: false },
+      { id: "delivery-self", value: "自提", sort: 10, enabled: true }
+    ]);
+    expect(config.basics.galvanizingProcesses[0]).toEqual({
+      id: "galvanizing-custom",
+      value: "热镀锌",
+      sort: 30,
+      enabled: true
+    });
+    expect(validateConfig(config).valid).toBe(true);
+  });
+
+  it("rejects empty delivery method and galvanizing process lists", function () {
+    var config = normalizeConfig({
+      basics: Object.assign({}, defaultConfig.basics, {
+        deliveryMethods: [],
+        galvanizingProcesses: []
+      })
+    });
+    var result = validateConfig(config);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("配送方式至少需要保留一项。");
+    expect(result.errors).toContain("镀锌工艺至少需要保留一项。");
+  });
+
   it("uses database config from the API before local config", async function () {
     saveConfig(makeConfig({ basics: Object.assign({}, defaultConfig.basics, { companyName: "Local Company" }) }));
     useHttpApiRuntime(function () {
@@ -192,6 +245,27 @@ describe("config service API fallback", function () {
     var config = await loadConfigWithApiFallback();
 
     expect(config.basics.companyName).toBe("Offline Local");
+  });
+
+  it("falls back locally when no API base URL is configured", async function () {
+    var fetchCalled = false;
+    saveConfig(makeConfig({ basics: Object.assign({}, defaultConfig.basics, { companyName: "File Mode Local" }) }));
+    Object.defineProperty(globalThis, "location", {
+      value: { protocol: "file:" },
+      configurable: true
+    });
+    Object.defineProperty(globalThis, "fetch", {
+      value: function () {
+        fetchCalled = true;
+        return Promise.reject(new Error("fetch should not be called"));
+      },
+      configurable: true
+    });
+
+    var config = await loadConfigWithApiFallback();
+
+    expect(config.basics.companyName).toBe("File Mode Local");
+    expect(fetchCalled).toBe(false);
   });
 
   it("falls back to defaultConfig when the API request fails and localStorage is empty", async function () {

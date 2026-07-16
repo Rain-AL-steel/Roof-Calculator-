@@ -1,4 +1,4 @@
-import { clearApiAuth, getApiAuthToken, getDefaultApiUsername, isApiConfigured, loginToApi } from "./apiClient.js";
+import { clearApiAuth, getApiAuthToken, getApiAuthUser, getDefaultApiUsername, hasApiRole, isApiConfigured, loginToApi } from "./apiClient.js";
 
 export const AUTH_STORAGE_KEY = "erp_auth_v1";
 export const AUTH_SESSION_KEY = "erp_auth_session_v1";
@@ -135,6 +135,16 @@ export function isAuthenticated() {
   return Boolean(session && session.passwordHash === record.passwordHash);
 }
 
+export function getCurrentAuthUser() {
+  if (isApiConfigured()) return getApiAuthUser();
+  return isAuthenticated() ? { username: "local", displayName: "本机管理员", roles: ["ADMIN"] } : null;
+}
+
+export function hasCurrentUserRole(role) {
+  if (!isApiConfigured()) return isAuthenticated() && String(role || "").trim().toUpperCase() === "ADMIN";
+  return hasApiRole(role);
+}
+
 export function logout() {
   clearApiAuth();
   var storage = getSessionStorage();
@@ -177,7 +187,14 @@ async function unlockWithRecord(record) {
 
 export async function loginWithPassword(password, username) {
   if (isApiConfigured()) {
-    return loginToApi(String(username || "").trim() || getDefaultApiUsername(), password);
+    try {
+      return await loginToApi(String(username || "").trim() || getDefaultApiUsername(), password);
+    } catch (error) {
+      if (error && (error.message === "Failed to fetch" || error.name === "TypeError")) {
+        throw new Error("无法连接登录服务。请启动本地后端，或在 runtime-config.js 中启用本机验证模式。");
+      }
+      throw error;
+    }
   }
   var record = loadAuthRecord();
   if (!record) throw new Error("还没有设置登录密码。");

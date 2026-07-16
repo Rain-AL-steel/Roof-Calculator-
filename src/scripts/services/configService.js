@@ -85,6 +85,8 @@ export function normalizeConfig(rawConfig) {
       fixedWidth: Number.isFinite(Number(basics.fixedWidth)) ? Number(basics.fixedWidth) : fallback.basics.fixedWidth,
       segmentLengths: normalizeOptions(basics.segmentLengths, fallback.basics.segmentLengths, "segment"),
       defaultSegmentLength: Number.isFinite(Number(basics.defaultSegmentLength)) ? Number(basics.defaultSegmentLength) : fallback.basics.defaultSegmentLength,
+      deliveryMethods: normalizeOptions(basics.deliveryMethods, fallback.basics.deliveryMethods, "delivery"),
+      galvanizingProcesses: normalizeOptions(basics.galvanizingProcesses, fallback.basics.galvanizingProcesses, "galvanizing"),
       mainTileDefaultPrice: toNullableNumber(basics.mainTileDefaultPrice),
       colorOptions: normalizeOptions(basics.colorOptions, fallback.basics.colorOptions, "color"),
       companyName: mergeString(basics.companyName, fallback.basics.companyName),
@@ -170,6 +172,8 @@ export function validateConfig(config) {
   if (!Number.isFinite(Number(normalized.basics.defaultSegmentLength)) || Number(normalized.basics.defaultSegmentLength) <= 0) {
     errors.push("默认节长必须是正数。");
   }
+  validatePositiveOptionList(errors, normalized.basics.deliveryMethods, "配送方式", false);
+  validatePositiveOptionList(errors, normalized.basics.galvanizingProcesses, "镀锌工艺", false);
   if (normalized.basics.mainTileDefaultPrice !== null && (!Number.isFinite(Number(normalized.basics.mainTileDefaultPrice)) || Number(normalized.basics.mainTileDefaultPrice) < 0)) {
     errors.push("主瓦默认单价不能为负数。");
   }

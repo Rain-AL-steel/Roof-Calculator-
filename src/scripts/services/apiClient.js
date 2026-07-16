@@ -96,14 +96,32 @@ export function getApiAuthToken() {
   return record ? record.token : "";
 }
 
+export function getApiAuthUser() {
+  var record = loadApiAuth();
+  return record && record.user && typeof record.user === "object" ? record.user : null;
+}
+
+export function hasApiRole(role) {
+  var expected = String(role || "").trim().toUpperCase();
+  if (!expected) return false;
+  var user = getApiAuthUser();
+  return (Array.isArray(user && user.roles) ? user.roles : []).some(function (item) {
+    var value = typeof item === "string" ? item : item && (item.code || item.name);
+    return String(value || "").trim().toUpperCase() === expected;
+  });
+}
+
 export function clearApiAuth() {
   var storage = getStorage();
   if (storage) storage.removeItem(API_AUTH_STORAGE_KEY);
 }
 
 export function getApiBaseUrl() {
-  var configured = globalThis.ERP_API_BASE_URL || globalThis.__ERP_API_BASE_URL__;
-  if (configured) return normalizeConfiguredApiBaseUrl(configured);
+  if (globalThis.ERP_API_DISABLED === true || globalThis.__ERP_API_DISABLED__ === true) return "";
+  var hasExplicitConfig = Object.prototype.hasOwnProperty.call(globalThis, "ERP_API_BASE_URL") ||
+    Object.prototype.hasOwnProperty.call(globalThis, "__ERP_API_BASE_URL__");
+  var configured = globalThis.ERP_API_BASE_URL !== undefined ? globalThis.ERP_API_BASE_URL : globalThis.__ERP_API_BASE_URL__;
+  if (hasExplicitConfig) return configured ? normalizeConfiguredApiBaseUrl(configured) : "";
 
   var location = getRuntimeLocation();
   if (!location || location.protocol === "file:") return "";
@@ -150,6 +168,13 @@ export function apiRequest(path, options) {
   var fetchApi = getRuntimeFetch();
   if (!fetchApi) return Promise.reject(new Error("Fetch API is not available."));
 
+  var requestUrl;
+  try {
+    requestUrl = buildApiUrl(path);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
   var requestOptions = options || {};
   var controller = typeof AbortController === "function" ? new AbortController() : null;
   var timer = null;
@@ -182,7 +207,7 @@ export function apiRequest(path, options) {
   delete fetchOptions.timeoutMs;
   delete fetchOptions.responseType;
 
-  return fetchApi(buildApiUrl(path), fetchOptions).then(function (response) {
+  return fetchApi(requestUrl, fetchOptions).then(function (response) {
     if (timer) clearTimeout(timer);
     if (responseType === "blob" && response.ok) {
       return response.blob();

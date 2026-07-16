@@ -25,6 +25,16 @@ export const defaultConfig = {
       option("segment-219", 0.219, 20)
     ],
     defaultSegmentLength: 0.219,
+    deliveryMethods: [
+      option("delivery-self-pickup", "自提", 10),
+      option("delivery-included", "包配送", 20),
+      option("delivery-tricycle", "三轮车配送", 30),
+      option("delivery-huolala", "货拉拉配送", 40)
+    ],
+    galvanizingProcesses: [
+      option("galvanizing-double", "双镀锌", 10),
+      option("galvanizing-single", "单镀锌", 20)
+    ],
     mainTileDefaultPrice: null,
     colorOptions: [
       option("color-zaohong", "枣红色", 10),

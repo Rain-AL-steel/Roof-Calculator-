@@ -11,20 +11,20 @@ export default {
     },
     extend: {
       colors: {
-        "app-bg": "#fffaf3",
-        "app-surface": "#fffdf9",
+        "app-bg": "#f4f6f5",
+        "app-surface": "#ffffff",
         "app-surface-raised": "#ffffff",
-        "app-surface-soft": "#fff8ef",
-        "app-line": "#ead8bd",
-        "app-line-strong": "#ddb987",
-        "app-text": "#21150a",
-        "app-muted": "#7b6a58",
-        "app-primary": "#b56500",
-        "app-primary-dark": "#8a4a05",
-        "app-primary-soft": "#fff3df",
-        "app-accent": "#cf8b2e",
-        "app-danger": "#d92d20",
-        "app-danger-soft": "#fff1ed"
+        "app-surface-soft": "#eef2f0",
+        "app-line": "#d9e1de",
+        "app-line-strong": "#c5d0cc",
+        "app-text": "#17211e",
+        "app-muted": "#66736f",
+        "app-primary": "#176b57",
+        "app-primary-dark": "#115645",
+        "app-primary-soft": "#e3f0eb",
+        "app-accent": "#176b57",
+        "app-danger": "#b5473e",
+        "app-danger-soft": "#fbeceb"
       },
       borderRadius: {
         app: "8px",
@@ -32,14 +32,14 @@ export default {
         "app-xl": "26px"
       },
       boxShadow: {
-        app: "0 16px 42px -30px rgba(138, 74, 5, 0.42), 0 1px 2px rgba(92, 51, 6, 0.08)",
-        "app-soft": "0 12px 26px -22px rgba(138, 74, 5, 0.48), 0 1px 2px rgba(92, 51, 6, 0.08)"
+        app: "0 18px 42px -34px rgba(23, 33, 30, 0.42), 0 1px 2px rgba(23, 33, 30, 0.06)",
+        "app-soft": "0 12px 28px -24px rgba(23, 33, 30, 0.3), 0 1px 2px rgba(23, 33, 30, 0.05)"
       },
       transitionTimingFunction: {
         "app-out": "cubic-bezier(0.16, 1, 0.3, 1)"
       },
       fontFamily: {
-        sans: ["Geist", "Satoshi", "Outfit", "Segoe UI", "Microsoft YaHei", "Noto Sans SC", "system-ui", "sans-serif"],
+        sans: ["Geist", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Geist Mono", "SFMono-Regular", "Consolas", "monospace"]
       },
       keyframes: {

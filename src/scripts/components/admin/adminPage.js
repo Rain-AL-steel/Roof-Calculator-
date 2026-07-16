@@ -7,6 +7,7 @@ import {
   validateConfig
 } from "../../services/configService.js";
 import { escapeHtml } from "../../utils.js";
+import { confirmAction, showToast } from "../common/feedback.js";
 
 function sortBySort(items) {
   return (Array.isArray(items) ? items : []).slice().sort(function (a, b) {
@@ -130,13 +131,23 @@ function renderLogoPreview(draft) {
   return "<div class='logo-preview'><img src='" + draft.basics.defaultLogo + "' alt='默认 Logo' /></div>";
 }
 
-function renderAdmin(draft) {
-  return "<div class='admin-actions-bar'>" +
-    "<button type='button' class='btn btn-primary' id='adminSave'>保存配置</button>" +
-    "<button type='button' class='btn btn-neutral' id='adminExport'>导出配置 JSON</button>" +
-    "<button type='button' class='btn btn-danger' id='adminReset'>恢复默认配置</button>" +
-    "</div><div class='admin-status' id='adminStatus' role='status'></div>" +
-    "<section class='admin-section'><div class='admin-section-head'><h3>基础参数</h3></div><div class='admin-form-grid'>" +
+var ADMIN_CATEGORIES = [
+  ["basics", "基础资料"], ["map", "地图设置"], ["products", "产品选项"],
+  ["steel", "钢材配置"], ["reports", "报表模板"], ["data", "数据管理"]
+];
+
+function renderAdminNav(activeCategory) {
+  return "<nav class='admin-category-nav' aria-label='管理分类'>" + ADMIN_CATEGORIES.map(function (item) {
+    return "<button type='button' class='admin-category-btn" + (activeCategory === item[0] ? " active" : "") + "' data-admin-category='" + item[0] + "'>" + item[1] + "</button>";
+  }).join("") + "</nav>";
+}
+
+function renderCategoryPanel(id, activeCategory, content) {
+  return "<div class='admin-category-panel' data-admin-category-panel='" + id + "'" + (id === activeCategory ? "" : " hidden") + ">" + content + "</div>";
+}
+
+function renderAdmin(draft, activeCategory, isAdmin) {
+  var basics = "<section class='admin-section'><div class='admin-section-head'><h3>基础参数</h3></div><div class='admin-form-grid'>" +
     "<label class='field'><span>固定宽度（米）</span><input data-field='basics.fixedWidth' data-value-type='number' type='number' min='0.001' step='0.001' value='" + escapeHtml(draft.basics.fixedWidth) + "' /></label>" +
     "<label class='field'><span>默认节长</span><select data-field='basics.defaultSegmentLength' data-value-type='number'>" + renderDefaultSegmentOptions(draft) + "</select></label>" +
     "<label class='field'><span>主瓦默认单价</span><input data-field='basics.mainTileDefaultPrice' data-value-type='number' type='number' min='0' step='0.01' value='" + escapeHtml(formatPrice(draft.basics.mainTileDefaultPrice)) + "' /></label>" +
@@ -144,49 +155,33 @@ function renderAdmin(draft) {
     "<label class='field span-3'><span>地址</span><input data-field='basics.address' type='text' value='" + escapeHtml(draft.basics.address) + "' /></label>" +
     "<label class='field span-3'><span>电话</span><input data-field='basics.phone' type='text' value='" + escapeHtml(draft.basics.phone) + "' /></label>" +
     "<div class='field span-3'><span>默认 Logo</span><div class='admin-logo-row'>" + renderLogoPreview(draft) + "<input id='adminLogoUpload' type='file' accept='image/*' /><button type='button' class='btn btn-neutral' id='adminClearLogo'>清除 Logo</button></div></div>" +
-    "</div></section>" +
-    "<section class='admin-section'><div class='admin-section-head'><h3>地图设置</h3></div><div class='admin-form-grid'>" +
+    "</div></section>";
+  var map = "<section class='admin-section'><div class='admin-section-head'><h3>地图设置</h3></div><div class='admin-form-grid'>" +
     "<div class='field'><span>首页订单地图</span><label class='admin-switch'><input data-field='mapSettings.enabled' type='checkbox'" + (draft.mapSettings.enabled ? " checked" : "") + " /><span>启用</span></label></div>" +
     "<label class='field'><span>高德 JS API Key</span><input data-field='mapSettings.amapKey' type='text' value='" + escapeHtml(draft.mapSettings.amapKey) + "' autocomplete='off' /></label>" +
     "<label class='field'><span>安全密钥 securityJsCode</span><input data-field='mapSettings.securityJsCode' type='text' value='" + escapeHtml(draft.mapSettings.securityJsCode) + "' autocomplete='off' /></label>" +
     "<label class='field'><span>默认解析城市 / adcode</span><input data-field='mapSettings.geocodeCity' type='text' value='" + escapeHtml(draft.mapSettings.geocodeCity) + "' placeholder='留空按全国解析' /></label>" +
-    "<label class='field span-2'><span>地图样式</span><input data-field='mapSettings.mapStyle' type='text' value='" + escapeHtml(draft.mapSettings.mapStyle) + "' placeholder='amap://styles/whitesmoke' /></label>" +
-    "</div></section>" +
-    renderOptionSection(draft, "可选节长", "basics.segmentLengths", "节长", true) +
-    renderOptionSection(draft, "默认颜色选项", "basics.colorOptions", "颜色", false) +
-    renderOptionSection(draft, "单位选项", "unitOptions", "单位", false) +
-    renderCatalogSection(draft, "配件管理", "accessories", "accessory") +
-    "<section class='admin-section'><div class='admin-section-head'><h3>钢铁快捷项</h3></div><div class='admin-form-grid'>" +
-    "<label class='field'><span>方管名称</span><input data-field='steel.tubeMaterialName' type='text' value='" + escapeHtml(draft.steel.tubeMaterialName) + "' /></label>" +
-    "<label class='field'><span>方管默认单位</span><input data-field='steel.tubeDefaultUnit' type='text' list='unitOptions' value='" + escapeHtml(draft.steel.tubeDefaultUnit) + "' /></label>" +
-    "<label class='field'><span>膨胀螺丝名称</span><input data-field='steel.boltMaterialName' type='text' value='" + escapeHtml(draft.steel.boltMaterialName) + "' /></label>" +
-    "<label class='field'><span>膨胀螺丝默认单位</span><input data-field='steel.boltDefaultUnit' type='text' list='unitOptions' value='" + escapeHtml(draft.steel.boltDefaultUnit) + "' /></label>" +
-    "</div></section>" +
-    renderCatalogSection(draft, "钢铁材料预设", "steel.materials", "steel") +
-    renderOptionSection(draft, "方管规格", "steel.tubeSpecs", "规格", false) +
-    renderOptionSection(draft, "方管厚度", "steel.thicknessOptions", "厚度", true) +
-    renderOptionSection(draft, "膨胀螺丝规格", "steel.boltSpecs", "规格", false) +
-    renderCatalogSection(draft, "其他瓦 / 特殊瓦", "otherTiles", "other") +
-    "<section class='admin-section'><div class='admin-section-head'><h3>报表模板</h3></div><div class='admin-form-grid'>" +
-    "<label class='field'><span>综合报表标题</span><input data-field='reportTemplate.mainTitle' type='text' value='" + escapeHtml(draft.reportTemplate.mainTitle) + "' /></label>" +
-    "<label class='field'><span>配件报表标题</span><input data-field='reportTemplate.accessoryTitle' type='text' value='" + escapeHtml(draft.reportTemplate.accessoryTitle) + "' /></label>" +
-    "<label class='field'><span>钢铁报表标题</span><input data-field='reportTemplate.steelTitle' type='text' value='" + escapeHtml(draft.reportTemplate.steelTitle) + "' /></label>" +
-    "<label class='field'><span>屋面材料标题</span><input data-field='reportTemplate.roofMaterialTitle' type='text' value='" + escapeHtml(draft.reportTemplate.roofMaterialTitle) + "' /></label>" +
-    "<label class='field'><span>其他瓦标题</span><input data-field='reportTemplate.otherTileTitle' type='text' value='" + escapeHtml(draft.reportTemplate.otherTileTitle) + "' /></label>" +
-    "<label class='field'><span>地址标签</span><input data-field='reportTemplate.addressLabel' type='text' value='" + escapeHtml(draft.reportTemplate.addressLabel) + "' /></label>" +
-    "<label class='field'><span>电话标签</span><input data-field='reportTemplate.phoneLabel' type='text' value='" + escapeHtml(draft.reportTemplate.phoneLabel) + "' /></label>" +
-    "<label class='field span-3'><span>温馨提示</span><textarea data-field='reportTemplate.warmTip' rows='3'>" + escapeHtml(draft.reportTemplate.warmTip) + "</textarea></label>" +
-    "<label class='field span-3'><span>签字栏文字</span><input data-field='reportTemplate.signatureLabel' type='text' value='" + escapeHtml(draft.reportTemplate.signatureLabel) + "' /></label>" +
-    "<label class='field span-3'><span>日期栏文字</span><input data-field='reportTemplate.receiptDateLabel' type='text' value='" + escapeHtml(draft.reportTemplate.receiptDateLabel) + "' /></label>" +
-    "<label class='field span-3'><span>钢铁工艺文字</span><input data-field='reportTemplate.steelProcessText' type='text' value='" + escapeHtml(draft.reportTemplate.steelProcessText) + "' /></label>" +
-    "</div></section>";
+    "<label class='field span-2'><span>地图样式</span><input data-field='mapSettings.mapStyle' type='text' value='" + escapeHtml(draft.mapSettings.mapStyle) + "' placeholder='amap://styles/whitesmoke' /></label></div></section>";
+  var products = renderOptionSection(draft, "可选节长", "basics.segmentLengths", "节长", true) + renderOptionSection(draft, "配送方式", "basics.deliveryMethods", "方式", false) + renderOptionSection(draft, "镀锌工艺", "basics.galvanizingProcesses", "工艺", false) + renderOptionSection(draft, "默认颜色选项", "basics.colorOptions", "颜色", false) + renderOptionSection(draft, "单位选项", "unitOptions", "单位", false) + renderCatalogSection(draft, "配件管理", "accessories", "accessory") + renderCatalogSection(draft, "其他瓦 / 特殊瓦", "otherTiles", "other");
+  var steel = "<section class='admin-section'><div class='admin-section-head'><h3>钢铁快捷项</h3></div><div class='admin-form-grid'>" +
+    "<label class='field'><span>方管名称</span><input data-field='steel.tubeMaterialName' type='text' value='" + escapeHtml(draft.steel.tubeMaterialName) + "' /></label><label class='field'><span>方管默认单位</span><input data-field='steel.tubeDefaultUnit' type='text' list='unitOptions' value='" + escapeHtml(draft.steel.tubeDefaultUnit) + "' /></label>" +
+    "<label class='field'><span>膨胀螺丝名称</span><input data-field='steel.boltMaterialName' type='text' value='" + escapeHtml(draft.steel.boltMaterialName) + "' /></label><label class='field'><span>膨胀螺丝默认单位</span><input data-field='steel.boltDefaultUnit' type='text' list='unitOptions' value='" + escapeHtml(draft.steel.boltDefaultUnit) + "' /></label></div></section>" + renderCatalogSection(draft, "钢铁材料预设", "steel.materials", "steel") + renderOptionSection(draft, "方管规格", "steel.tubeSpecs", "规格", false) + renderOptionSection(draft, "方管厚度", "steel.thicknessOptions", "厚度", true) + renderOptionSection(draft, "膨胀螺丝规格", "steel.boltSpecs", "规格", false);
+  var reports = "<section class='admin-section'><div class='admin-section-head'><h3>报表模板</h3></div><div class='admin-form-grid'>" +
+    "<label class='field'><span>综合报表标题</span><input data-field='reportTemplate.mainTitle' type='text' value='" + escapeHtml(draft.reportTemplate.mainTitle) + "' /></label><label class='field'><span>配件报表标题</span><input data-field='reportTemplate.accessoryTitle' type='text' value='" + escapeHtml(draft.reportTemplate.accessoryTitle) + "' /></label><label class='field'><span>钢铁报表标题</span><input data-field='reportTemplate.steelTitle' type='text' value='" + escapeHtml(draft.reportTemplate.steelTitle) + "' /></label>" +
+    "<label class='field'><span>屋面材料标题</span><input data-field='reportTemplate.roofMaterialTitle' type='text' value='" + escapeHtml(draft.reportTemplate.roofMaterialTitle) + "' /></label><label class='field'><span>其他瓦标题</span><input data-field='reportTemplate.otherTileTitle' type='text' value='" + escapeHtml(draft.reportTemplate.otherTileTitle) + "' /></label><label class='field'><span>地址标签</span><input data-field='reportTemplate.addressLabel' type='text' value='" + escapeHtml(draft.reportTemplate.addressLabel) + "' /></label><label class='field'><span>电话标签</span><input data-field='reportTemplate.phoneLabel' type='text' value='" + escapeHtml(draft.reportTemplate.phoneLabel) + "' /></label>" +
+    "<label class='field span-3'><span>温馨提示</span><textarea data-field='reportTemplate.warmTip' rows='3'>" + escapeHtml(draft.reportTemplate.warmTip) + "</textarea></label><label class='field span-3'><span>签字栏文字</span><input data-field='reportTemplate.signatureLabel' type='text' value='" + escapeHtml(draft.reportTemplate.signatureLabel) + "' /></label><label class='field span-3'><span>日期栏文字</span><input data-field='reportTemplate.receiptDateLabel' type='text' value='" + escapeHtml(draft.reportTemplate.receiptDateLabel) + "' /></label><label class='field span-3'><span>钢铁工艺文字</span><input data-field='reportTemplate.steelProcessText' type='text' value='" + escapeHtml(draft.reportTemplate.steelProcessText) + "' /></label></div></section>";
+  var data = "<section class='admin-section danger-zone'><div class='admin-section-head'><h3>危险操作</h3></div><p>清空订单会同时尝试删除服务器与本机记录，失败的服务器记录将保留。</p>" + (isAdmin ? "<button type='button' class='btn btn-danger' id='adminClearOrders'>清空全部订单</button>" : "<p>当前账号没有数据清理权限。</p>") + "</section>";
+  return "<div class='admin-actions-bar'><button type='button' class='btn btn-primary' id='adminSave'>保存配置</button><button type='button' class='btn btn-neutral' id='adminExport'>导出配置 JSON</button><button type='button' class='btn btn-danger' id='adminReset'>恢复默认配置</button></div><div class='admin-status' id='adminStatus' role='status'></div><div class='admin-workspace'>" + renderAdminNav(activeCategory) + "<div class='admin-category-content'>" + renderCategoryPanel("basics", activeCategory, basics) + renderCategoryPanel("map", activeCategory, map) + renderCategoryPanel("products", activeCategory, products) + renderCategoryPanel("steel", activeCategory, steel) + renderCategoryPanel("reports", activeCategory, reports) + renderCategoryPanel("data", activeCategory, data) + "</div></div>";
 }
 
 export function initAdminPage(options) {
   var getConfig = options.getConfig;
+  var isAdmin = typeof options.isAdmin === "function" ? options.isAdmin : function () { return true; };
+  var onClearOrders = typeof options.onClearOrders === "function" ? options.onClearOrders : function () { return Promise.resolve(false); };
   var root = document.getElementById("adminRoot");
   var draft = cloneConfig(getConfig());
   var isSavingConfig = false;
+  var activeCategory = "basics";
 
   function showStatus(message, isError) {
     var status = document.getElementById("adminStatus");
@@ -197,7 +192,7 @@ export function initAdminPage(options) {
   }
 
   function render() {
-    root.innerHTML = renderAdmin(draft);
+    root.innerHTML = renderAdmin(draft, activeCategory, isAdmin());
   }
 
   function setSaveBusy(isBusy) {
@@ -249,10 +244,12 @@ export function initAdminPage(options) {
     var list = getByPath(draft, path);
     var item = list.find(function (entry) { return entry.id === id; });
     var label = item && (item.name || item.value) ? item.name || item.value : "该项";
-    if (!window.confirm("确认删除“" + label + "”？")) return;
-    var index = list.findIndex(function (entry) { return entry.id === id; });
-    if (index >= 0) list.splice(index, 1);
-    render();
+    confirmAction({ title: "删除配置项", message: "确认删除“" + label + "”？", confirmLabel: "删除" }).then(function (confirmed) {
+      if (!confirmed) return;
+      var index = list.findIndex(function (entry) { return entry.id === id; });
+      if (index >= 0) list.splice(index, 1);
+      render();
+    });
   }
 
   function moveItem(path, id, direction) {
@@ -288,9 +285,10 @@ export function initAdminPage(options) {
       draft = cloneConfig(savedConfig);
       render();
       showStatus(savedLocallyOnly ? "配置已保存到本机，但服务器同步失败。" : "配置已保存并同步到服务器，出货单页面已更新。", savedLocallyOnly);
+      showToast(savedLocallyOnly ? "配置已保存到本机，但尚未同步到服务器。" : "系统配置已保存。", savedLocallyOnly ? "warning" : "success");
     }).catch(function (error) {
       showStatus(error.message || "配置保存失败。", true);
-      window.alert(error.message || "配置保存失败。");
+      showToast(error.message || "配置保存失败。", "error");
     }).finally(function () {
       isSavingConfig = false;
       setSaveBusy(false);
@@ -311,24 +309,28 @@ export function initAdminPage(options) {
   }
 
   function resetDraft() {
-    if (!window.confirm("确认恢复默认配置？当前自定义配置会被覆盖。")) return;
-    try {
-      draft = cloneConfig(resetConfig());
-      render();
-      showStatus("已恢复默认配置。", false);
-    } catch (error) {
-      showStatus(error.message || "恢复默认配置失败。", true);
-    }
+    confirmAction({ title: "恢复默认配置", message: "当前自定义配置会被覆盖，确定继续吗？", confirmLabel: "恢复默认" }).then(function (confirmed) {
+      if (!confirmed) return;
+      try {
+        draft = cloneConfig(resetConfig());
+        render();
+        showStatus("已恢复默认配置。", false);
+        showToast("已恢复默认配置，请检查后保存。", "success");
+      } catch (error) {
+        showStatus(error.message || "恢复默认配置失败。", true);
+        showToast(error.message || "恢复默认配置失败。", "error");
+      }
+    });
   }
 
   function uploadDefaultLogo(file) {
     if (!file) return;
     if (!/^image\//.test(file.type)) {
-      window.alert("仅支持上传图片文件作为默认 Logo。");
+      showToast("仅支持上传图片文件作为默认 Logo。", "warning");
       return;
     }
     if (file.size > 1536 * 1024) {
-      window.alert("默认 Logo 会保存到浏览器配置中，请控制在 1.5MB 以内。");
+      showToast("默认 Logo 会保存到浏览器配置中，请控制在 1.5MB 以内。", "warning");
       return;
     }
     var reader = new FileReader();
@@ -360,6 +362,11 @@ export function initAdminPage(options) {
   root.addEventListener("click", function (event) {
     var target = event.target.closest("button");
     if (!target) return;
+    if (target.dataset.adminCategory) {
+      activeCategory = target.dataset.adminCategory;
+      render();
+      return;
+    }
     if (target.id === "adminSave") saveDraft();
     if (target.id === "adminExport") exportDraft();
     if (target.id === "adminReset") resetDraft();
@@ -368,6 +375,7 @@ export function initAdminPage(options) {
       render();
       showStatus("默认 Logo 已清除，请保存配置。", false);
     }
+    if (target.id === "adminClearOrders") onClearOrders();
     if (target.dataset.addOption) addOption(target.dataset.addOption);
     if (target.dataset.addCatalog) addCatalog(target.dataset.addCatalog);
     if (target.classList.contains("admin-delete")) {

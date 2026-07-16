@@ -1,5 +1,5 @@
 import { escapeHtml, formatMoney, formatTrimFixed } from "../utils.js";
-import { computeGrandAmount, sumFiniteAmounts } from "../calc.js";
+import { computeGrandAmount, computeLineSubtotal, sumFiniteAmounts } from "../calc.js";
 
 function createDateString() {
   var today = new Date();
@@ -24,6 +24,11 @@ function sumSubtotal(items) {
   return sumFiniteAmounts((Array.isArray(items) ? items : []).map(function (item) {
     return item.subtotal;
   }));
+}
+
+function formatOtherTileTotalLength(item) {
+  var totalLength = computeLineSubtotal(item && item.length, item && item.qty);
+  return Number.isFinite(totalLength) ? formatTrimFixed(totalLength, 3) : "";
 }
 
 function getCompanyDateLine(config, dateStr) {
@@ -125,13 +130,15 @@ function getSharedReportCss(kind) {
       ".remark{margin:0 0 9px;border:1px solid #9ca69d;background:#f8faf8;padding:7px 9px;font-size:14px;font-weight:900;line-height:1.35}",
       ".content{display:grid;grid-template-columns:minmax(0,45.2%) minmax(0,54.8%);gap:6mm;align-items:start}",
       ".content>div{min-width:0}",
-      ".section{margin-bottom:8px;break-inside:avoid}",
+      ".section{margin-bottom:8px;break-inside:auto;page-break-inside:auto}",
+      ".full-report-page-continuation{break-before:page;page-break-before:always}",
+      ".main-summary-section{break-inside:auto;page-break-inside:auto}",
       ".sum td{font-weight:900;text-align:right}",
       ".sum td:last-child{text-align:center}",
-      ".content>div:first-child .sum td:first-child{text-align:left;padding-left:12px}",
-      ".content>div:first-child .sum td:nth-child(2){text-align:center}",
-      ".content>div:first-child .sum td:last-child{text-align:center}",
-      ".grand{margin-top:11px;border-top:3px solid #1f261f;border-bottom:3px solid #1f261f;padding:10px 3px 10px 0;text-align:right;font-size:28px;line-height:1.1;font-weight:900}",
+      ".main-summary-table .sum td:first-child{text-align:left;padding-left:12px}",
+      ".main-summary-table .sum td:nth-child(2){text-align:center}",
+      ".main-summary-table .sum td:last-child{text-align:center}",
+      ".grand{margin:8px 0;border-top:2px solid #1f261f;border-bottom:2px solid #1f261f;padding:7px 3px 7px 0;text-align:right;font-size:22px;line-height:1.1;font-weight:900;break-inside:avoid;page-break-inside:avoid}",
       ".sign{margin-top:10px;border-top:1px solid #c8cec9;padding-top:9px}",
       ".note{margin:0 0 10px;text-align:center;font-size:14px;font-weight:900;line-height:1.45}",
       ".sign-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,42%);grid-template-areas:'address signature' 'phone date';gap:0 28px;font-size:14px;font-weight:800;line-height:1.65;align-items:start}",
@@ -140,7 +147,7 @@ function getSharedReportCss(kind) {
       ".sign-signature{grid-area:signature;align-self:end;white-space:nowrap}",
       ".sign-phone{grid-area:phone}",
       ".sign-date{grid-area:date;white-space:nowrap}",
-      "@media print{.actions,.spacer{display:none!important}.header{margin-top:0}}"
+      "@media print{.actions,.spacer{display:none!important}.header{margin-top:0}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}h2{break-after:avoid-page;page-break-after:avoid}.section,table{break-inside:auto;page-break-inside:auto}}"
     ].join("");
   }
   return "@page{size:A4;margin:10mm;}*{box-sizing:border-box}body{font-family:Arial,'Microsoft YaHei',sans-serif;margin:0;color:#1f261f;background:#fff;font-weight:800;}.actions{position:fixed;top:10px;left:10px;right:10px;z-index:10;display:flex;justify-content:space-between;pointer-events:none}.actions button{pointer-events:auto;height:42px;border-radius:8px;border:1px solid #ccd6ce;background:#fff;padding:0 16px;font-weight:900;box-shadow:0 8px 22px rgba(0,0,0,.12);cursor:pointer}.actions .print{border-color:#13725d;background:#13725d;color:#fff}.spacer{height:52px}.header{position:relative;min-height:108px;border-bottom:2px solid #1f261f;padding:6px 0 10px;margin-bottom:10px;}h1{margin:0;text-align:center;font-size:30px;line-height:1.16;letter-spacing:0;font-weight:900}.date{text-align:center;color:#555;margin:5px 0 0;font-size:13px;font-weight:800}.meta{position:absolute;left:0;bottom:8px;display:grid;gap:5px;font-size:15px;font-weight:900}.logo{position:absolute;right:0;top:0;width:210px;height:88px;display:flex;align-items:center;justify-content:flex-end}.logo img{max-width:210px;max-height:88px;object-fit:contain}.meta{position:absolute;left:0;right:220px;bottom:8px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 10px;font-size:14px;font-weight:900;text-align:left}.meta-customer-line{display:flex;align-items:center;gap:22px;justify-content:flex-start;white-space:nowrap}.meta div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.remark{margin:0 0 10px;border:1px solid #9ca69d;background:#f8faf8;padding:7px 9px;font-size:14px;font-weight:900;line-height:1.4}.table-wrap{margin-top:9px}.section{margin-top:9px;break-inside:avoid}h2{margin:0 0 7px;font-size:16px;font-weight:900}table{width:100%;border-collapse:collapse;font-size:14px;font-weight:800;}th,td{border:1px solid #9ca69d;padding:8px 6px;text-align:center;line-height:1.32;font-weight:800;}th{background:#eef3ef;font-weight:900}.idx{width:44px}.name{text-align:left;font-weight:900}.sum td{font-weight:900;text-align:right}.sum td:last-child{text-align:center}.summary{margin-top:11px;border-top:2px solid #1f261f;border-bottom:2px solid #1f261f;padding:9px 0;text-align:right;font-size:22px;font-weight:900}.sign{margin-top:12px;border-top:1px solid #c8cec9;padding-top:8px}.note{margin:0 0 8px;text-align:center;font-size:14px;font-weight:900}.sign-row{display:flex;justify-content:space-between;gap:14px;font-size:14px;font-weight:800;line-height:1.65}.sign-row p{margin:0}@media print{.actions,.spacer{display:none!important}.header{margin-top:0}}";
@@ -322,11 +329,63 @@ function createBaseData(snapshot, config) {
   };
 }
 
+var FULL_REPORT_COLUMN_ROW_LIMIT = 27;
+var FULL_REPORT_FINAL_COLUMN_ROW_LIMIT = 21;
+
+function takeFullReportColumnRows(remaining) {
+  if (remaining.length <= FULL_REPORT_FINAL_COLUMN_ROW_LIMIT) {
+    return remaining.splice(0, remaining.length);
+  }
+  return remaining.splice(0, Math.min(FULL_REPORT_COLUMN_ROW_LIMIT, remaining.length - 1));
+}
+
+function paginateFullReportMainRows(rows) {
+  var remaining = Array.isArray(rows) ? rows.slice() : [];
+  var pages = [];
+  while (remaining.length) {
+    if (remaining.length <= FULL_REPORT_FINAL_COLUMN_ROW_LIMIT) {
+      pages.push({ left: remaining.splice(0, remaining.length), right: [], totalsOnlyRight: false });
+      continue;
+    }
+    if (remaining.length <= FULL_REPORT_COLUMN_ROW_LIMIT) {
+      pages.push({ left: remaining.splice(0, remaining.length), right: [], totalsOnlyRight: true });
+      continue;
+    }
+    var left = remaining.splice(0, FULL_REPORT_COLUMN_ROW_LIMIT);
+    pages.push({
+      left: left,
+      right: remaining.length ? takeFullReportColumnRows(remaining) : [],
+      totalsOnlyRight: false
+    });
+  }
+  return pages.length ? pages : [{ left: [], right: [], totalsOnlyRight: false }];
+}
+
+function buildFullMainRowsHtml(rows) {
+  return rows.map(function (row) {
+    return "<tr class='main-data-row'><td>" + escapeHtml(row.lengthsText) + "</td><td class='actual-cell'>" + row.actual + "</td><td>" + formatTrimFixed(row.totalQty, 0) + "</td><td>" + formatTrimFixed(row.area, 4) + "</td></tr>";
+  }).join("");
+}
+
+function buildFullMainTotalsHtml(data) {
+  return "<tr class='sum main-qty-total'><td colspan='2'>数量合计</td><td>" + formatTrimFixed(data.qtyTotal, 0) + "</td><td></td></tr>" +
+    "<tr class='sum'><td colspan='3'>总面积合计</td><td>" + formatTrimFixed(data.areaTotal, 4) + "</td></tr>" +
+    "<tr class='sum'><td colspan='3'>主瓦单价</td><td>" + (Number.isFinite(data.unitPrice) ? formatMoney(data.unitPrice) : "未填写") + "</td></tr>" +
+    "<tr class='sum'><td colspan='3'>主瓦总金额</td><td>" + formatMoney(data.mainAmount) + "</td></tr>";
+}
+
+function buildFullMainTable(data, profileText, rows, options) {
+  var settings = options || {};
+  var title = settings.continuation ? "一、主瓦汇总（续）" : "一、主瓦汇总（" + escapeHtml(profileText) + "）";
+  return "<div class='section main-summary-section'><h2>" + title + "</h2><table class='main-summary-table' data-main-table='" + (settings.continuation ? "continuation" : "primary") + "'><thead><tr><th>长度</th><th>实裁节数</th><th>数量</th><th>单项面积</th></tr></thead><tbody>" + buildFullMainRowsHtml(rows) + (settings.includeTotals ? buildFullMainTotalsHtml(data) : "") + "</tbody></table></div>";
+}
+
+function buildFullMainTotalsTable(data) {
+  return "<div class='section main-summary-section'><h2>一、主瓦汇总（合计）</h2><table class='main-summary-table' data-main-table='totals'><tbody>" + buildFullMainTotalsHtml(data) + "</tbody></table></div>";
+}
+
 function buildFullReport(data, config) {
   var template = config.reportTemplate;
-  var mainRowsHtml = data.mainRows.map(function (row) {
-    return "<tr><td>" + escapeHtml(row.lengthsText) + "</td><td class='actual-cell'>" + row.actual + "</td><td>" + formatTrimFixed(row.totalQty, 0) + "</td><td>" + formatTrimFixed(row.area, 4) + "</td></tr>";
-  }).join("");
   var accessoryRowsHtml = buildReportTableRows(data.accessories, "无配件数据", function (item) {
     return "<tr><td>" + escapeHtml(item.name) + "</td><td>" + formatTrimFixed(item.qty, 0) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
   }, 5);
@@ -335,18 +394,32 @@ function buildFullReport(data, config) {
   }, 5);
   var otherTileRowsHtml = buildReportTableRows(data.otherTiles, "无其他瓦数据", function (item) {
     var lengthText = Number.isFinite(item.length) ? formatTrimFixed(item.length, 3) : "";
-    return "<tr><td>" + escapeHtml(item.name) + "</td><td>" + lengthText + "</td><td>" + formatTrimFixed(item.qty, 0) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
-  }, 6);
+    return "<tr><td>" + escapeHtml(item.name) + "</td><td>" + lengthText + "</td><td>" + formatTrimFixed(item.qty, 0) + "</td><td>" + formatOtherTileTotalLength(item) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
+  }, 7);
   var widthValue = Number(config.basics.fixedWidth);
   var profileText = Number.isFinite(widthValue) ? Math.round(widthValue * 1000) + " 型" : "主瓦";
-  var body = "<div class='header'><h1>" + escapeHtml(template.mainTitle) + "</h1><p class='date'>" + getCompanyDateLine(config, data.dateStr) + "</p><div class='meta'>" + buildFullReportMeta(data) + "</div><div class='logo'>" + data.logoHtml + "</div></div>" +
-    buildRemarkHtml(data) +
-    "<div class='content'><div><div class='section'><h2>一、主瓦汇总（" + escapeHtml(profileText) + "）</h2><table><thead><tr><th>长度</th><th>实裁节数</th><th>数量</th><th>单项面积</th></tr></thead><tbody>" + mainRowsHtml +
-    "<tr class='sum main-qty-total'><td colspan='2'>数量合计</td><td>" + formatTrimFixed(data.qtyTotal, 0) + "</td><td></td></tr><tr class='sum'><td colspan='3'>总面积合计</td><td>" + formatTrimFixed(data.areaTotal, 4) + "</td></tr><tr class='sum'><td colspan='3'>主瓦单价</td><td>" + (Number.isFinite(data.unitPrice) ? formatMoney(data.unitPrice) : "未填写") + "</td></tr><tr class='sum'><td colspan='3'>主瓦总金额</td><td>" + formatMoney(data.mainAmount) + "</td></tr></tbody></table></div></div>" +
-    "<div><div class='section'><h2>二、配件清单</h2><table><thead><tr><th>名称</th><th>数量</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + accessoryRowsHtml + "<tr class='sum'><td colspan='4'>配件总金额</td><td>" + formatMoney(data.accessoryAmount) + "</td></tr></tbody></table></div>" +
+  var sideSectionsHtml = "<div class='section'><h2>二、配件清单</h2><table><thead><tr><th>名称</th><th>数量</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + accessoryRowsHtml + "<tr class='sum'><td colspan='4'>配件总金额</td><td>" + formatMoney(data.accessoryAmount) + "</td></tr></tbody></table></div>" +
     "<div class='section'><h2>三、钢铁材料</h2><table><thead><tr><th>名称</th><th>数量</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + steelRowsHtml + "<tr class='sum'><td colspan='4'>钢铁材料总金额</td><td>" + formatMoney(data.steelAmount) + "</td></tr></tbody></table></div>" +
-    "<div class='section'><h2>四、其他瓦 / 特殊瓦</h2><table><thead><tr><th>名称</th><th>长度</th><th>数量</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + otherTileRowsHtml + "<tr class='sum'><td colspan='5'>其他瓦总金额</td><td>" + formatMoney(data.otherTileAmount) + "</td></tr></tbody></table></div></div></div>" +
-    "<div class='grand'>全单总合计 ≈ " + Math.round(data.grandAmount) + " 元</div>";
+    "<div class='section'><h2>四、其他瓦 / 特殊瓦</h2><table><thead><tr><th>名称</th><th>单片长度</th><th>片数</th><th>总长度</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + otherTileRowsHtml + "<tr class='sum'><td colspan='6'>其他瓦总金额</td><td>" + formatMoney(data.otherTileAmount) + "</td></tr></tbody></table></div>";
+  var pages = paginateFullReportMainRows(data.mainRows);
+  var body = pages.map(function (page, pageIndex) {
+    var isFirstPage = pageIndex === 0;
+    var isFinalPage = pageIndex === pages.length - 1;
+    var leftIsFinal = isFinalPage && !page.right.length && !page.totalsOnlyRight;
+    var rightIsFinal = isFinalPage && Boolean(page.right.length);
+    var leftHtml = buildFullMainTable(data, profileText, page.left, {
+      continuation: !isFirstPage,
+      includeTotals: leftIsFinal
+    });
+    var rightHtml = page.right.length ? buildFullMainTable(data, profileText, page.right, {
+      continuation: true,
+      includeTotals: rightIsFinal
+    }) : (page.totalsOnlyRight ? buildFullMainTotalsTable(data) : "");
+    var grandHtml = isFinalPage ? "<div class='grand'>全单总合计 ≈ " + Math.round(data.grandAmount) + " 元</div>" : "";
+    if (isFinalPage) rightHtml += sideSectionsHtml + grandHtml;
+    var pagePrefix = isFirstPage ? "<div class='header'><h1>" + escapeHtml(template.mainTitle) + "</h1><p class='date'>" + getCompanyDateLine(config, data.dateStr) + "</p><div class='meta'>" + buildFullReportMeta(data) + "</div><div class='logo'>" + data.logoHtml + "</div></div>" + buildRemarkHtml(data) : "";
+    return "<div class='full-report-page" + (isFirstPage ? "" : " full-report-page-continuation") + "' data-main-page='" + (pageIndex + 1) + "'>" + pagePrefix + "<div class='content'><div>" + leftHtml + "</div><div>" + rightHtml + "</div></div></div>";
+  }).join("");
   return wrapReport(template.mainTitle, body, data, config, "full", buildCuttingAdviceHtml(data));
 }
 
@@ -393,9 +466,9 @@ function buildRoofMaterialReport(data, config) {
   if (data.otherTiles.length) {
     var otherTileRowsHtml = data.otherTiles.map(function (item, index) {
       var lengthText = Number.isFinite(item.length) ? formatTrimFixed(item.length, 3) : "";
-      return "<tr><td>" + (index + 1) + "</td><td class='name'>" + escapeHtml(item.name) + "</td><td>" + lengthText + "</td><td>" + formatTrimFixed(item.qty, 2) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
+      return "<tr><td>" + (index + 1) + "</td><td class='name'>" + escapeHtml(item.name) + "</td><td>" + lengthText + "</td><td>" + formatTrimFixed(item.qty, 2) + "</td><td>" + formatOtherTileTotalLength(item) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
     }).join("");
-    otherTileSectionHtml = "<div class='section'><h2>三、其他瓦 / 特殊瓦</h2><table><thead><tr><th class='idx'>序号</th><th>名称</th><th>长度</th><th>数量</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + otherTileRowsHtml + "<tr class='sum'><td colspan='6'>其他瓦合计金额</td><td>" + formatMoney(data.otherTileAmount) + "</td></tr></tbody></table></div>";
+    otherTileSectionHtml = "<div class='section'><h2>三、其他瓦 / 特殊瓦</h2><table><thead><tr><th class='idx'>序号</th><th>名称</th><th>单片长度</th><th>片数</th><th>总长度</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + otherTileRowsHtml + "<tr class='sum'><td colspan='7'>其他瓦合计金额</td><td>" + formatMoney(data.otherTileAmount) + "</td></tr></tbody></table></div>";
   }
   var body = buildSingleHeader(config.reportTemplate.roofMaterialTitle, "", data, config) +
     buildRemarkHtml(data) +
@@ -409,12 +482,12 @@ function buildRoofMaterialReport(data, config) {
 function buildOtherTileOnlyReport(data, config) {
   var rowsHtml = data.otherTiles.map(function (item, index) {
     var lengthText = Number.isFinite(item.length) ? formatTrimFixed(item.length, 3) : "";
-    return "<tr><td>" + (index + 1) + "</td><td class='name'>" + escapeHtml(item.name) + "</td><td>" + lengthText + "</td><td>" + formatTrimFixed(item.qty, 2) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
+    return "<tr><td>" + (index + 1) + "</td><td class='name'>" + escapeHtml(item.name) + "</td><td>" + lengthText + "</td><td>" + formatTrimFixed(item.qty, 2) + "</td><td>" + formatOtherTileTotalLength(item) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
   }).join("");
   var body = buildSingleHeader(config.reportTemplate.otherTileTitle, "", data, config) +
     buildRemarkHtml(data) +
-    "<div class='table-wrap'><table><thead><tr><th class='idx'>序号</th><th>名称 / 规格</th><th>长度</th><th>数量</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + rowsHtml +
-    "<tr class='sum'><td colspan='6'>其他瓦合计金额</td><td>" + formatMoney(data.otherTileAmount) + "</td></tr></tbody></table></div>" +
+    "<div class='table-wrap'><table><thead><tr><th class='idx'>序号</th><th>名称 / 规格</th><th>单片长度</th><th>片数</th><th>总长度</th><th>单位</th><th>单价</th><th>小计金额</th></tr></thead><tbody>" + rowsHtml +
+    "<tr class='sum'><td colspan='7'>其他瓦合计金额</td><td>" + formatMoney(data.otherTileAmount) + "</td></tr></tbody></table></div>" +
     "<div class='summary'>其他瓦总合计 ≈ " + Math.round(data.otherTileAmount) + " 元</div>";
   return wrapReport(config.reportTemplate.otherTileTitle, body, data, config, "single");
 }

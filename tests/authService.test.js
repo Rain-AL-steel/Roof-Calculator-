@@ -2,8 +2,11 @@ import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AUTH_STORAGE_KEY,
+  getCurrentAuthUser,
   getAuthUsernameDefault,
   hasAuthSetup,
+  hasCurrentUserRole,
+  isApiAuthConfigured,
   isAuthenticated,
   loadAuthRecord,
   loginWithPassword,
@@ -67,6 +70,8 @@ afterEach(function () {
   else delete globalThis.location;
   delete globalThis.ERP_ADMIN_USERNAME;
   delete globalThis.__ERP_ADMIN_USERNAME__;
+  delete globalThis.ERP_API_BASE_URL;
+  delete globalThis.__ERP_API_BASE_URL__;
   clearApiAuth();
 });
 
@@ -89,7 +94,7 @@ describe("auth service", function () {
               token: "api-token",
               tokenType: "Bearer",
               expiresIn: "8h",
-              user: { username: capturedBody.username }
+              user: { username: capturedBody.username, displayName: "业务员", roles: ["USER"] }
             }));
           }
         });
@@ -105,6 +110,9 @@ describe("auth service", function () {
     });
     expect(getApiAuthToken()).toBe("api-token");
     expect(isAuthenticated()).toBe(true);
+    expect(getCurrentAuthUser().displayName).toBe("业务员");
+    expect(hasCurrentUserRole("USER")).toBe(true);
+    expect(hasCurrentUserRole("ADMIN")).toBe(false);
   });
 
   it("falls back to the configured default API username when the username is blank", async function () {
@@ -134,6 +142,33 @@ describe("auth service", function () {
     expect(capturedBody.username).toBe("configured-admin");
   });
 
+  it("uses local password mode when the runtime API URL is explicitly blank", async function () {
+    Object.defineProperty(globalThis, "location", {
+      value: { protocol: "http:" },
+      configurable: true
+    });
+    globalThis.ERP_API_BASE_URL = "";
+
+    expect(isApiAuthConfigured()).toBe(false);
+    await setupPassword("2468", "2468");
+    expect(isAuthenticated()).toBe(true);
+    expect(hasCurrentUserRole("ADMIN")).toBe(true);
+  });
+
+  it("shows a useful message when the configured login API cannot be reached", async function () {
+    Object.defineProperty(globalThis, "location", {
+      value: { protocol: "http:" },
+      configurable: true
+    });
+    globalThis.ERP_API_BASE_URL = "http://127.0.0.1:3001";
+    Object.defineProperty(globalThis, "fetch", {
+      value: function () { return Promise.reject(new TypeError("Failed to fetch")); },
+      configurable: true
+    });
+
+    await expect(loginWithPassword("secret-password", "admin")).rejects.toThrow("无法连接登录服务");
+  });
+
   it("sets up a local password without storing plain text", async function () {
     await setupPassword("1234", "1234");
     var raw = globalThis.localStorage.getItem(AUTH_STORAGE_KEY);
@@ -143,6 +178,8 @@ describe("auth service", function () {
     expect(raw).not.toContain("1234");
     expect(record.passwordHash).toBeTruthy();
     expect(record.salt).toBeTruthy();
+    expect(getCurrentAuthUser().displayName).toBe("本机管理员");
+    expect(hasCurrentUserRole("ADMIN")).toBe(true);
   });
 
   it("logs out and requires the correct password to unlock again", async function () {

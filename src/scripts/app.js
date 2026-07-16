@@ -1,8 +1,11 @@
 import { initAdminPage } from "./components/admin/adminPage.js";
-import { initShippingPage } from "./components/shipping/shippingPage.js";
+import { buildConfiguredSelectOptions, computeOtherTileTotalLength, hasWorkingDraftContent, initShippingPage } from "./components/shipping/shippingPage.js";
+import { confirmAction, initFeedback, showToast } from "./components/common/feedback.js";
 import {
+  getCurrentAuthUser,
   getAuthUsernameDefault,
   hasAuthSetup,
+  hasCurrentUserRole,
   isApiAuthConfigured,
   isAuthenticated,
   loginWithPassword,
@@ -32,12 +35,18 @@ import {
   getOrdersInTrendRange,
   loadOrders,
   loadOrdersWithApiFallback,
+  getOrderSyncState,
   normalizeOrder,
   paginateHistoryOrders,
+  retryPendingOrderSync,
   updateOrderWithApiFallback,
   upsertOrderWithApiFallback
 } from "./services/orderService.js";
-import { escapeHtml, formatMoney, formatNum, parseNum } from "./utils.js";
+import {
+  exportWorkingDraft,
+  parseWorkingDraftFile
+} from "./services/workingDraftService.js";
+import { escapeHtml, formatMoney, formatNum, formatTrimFixed, parseNum } from "./utils.js";
 
 var currentConfig = loadConfig();
 var authView = document.getElementById("authView");
@@ -60,9 +69,17 @@ var shippingView = document.getElementById("shippingView");
 var adminView = document.getElementById("adminView");
 var adminTopToggle = document.getElementById("adminTopToggle");
 var logoutButton = document.getElementById("logoutButton");
+var syncStatusButton = document.getElementById("syncStatusButton");
+var syncStatusText = document.getElementById("syncStatusText");
+var syncStatusMeta = document.getElementById("syncStatusMeta");
+var currentUserName = document.getElementById("currentUserName");
 var backToShipping = document.getElementById("backToShipping");
 var saveOrderBtn = document.getElementById("saveOrder");
-var saveOrderSideBtn = document.getElementById("saveOrderSide");
+var workingDraftStatus = document.getElementById("workingDraftStatus");
+var exportWorkingDraftButton = document.getElementById("exportWorkingDraft");
+var importWorkingDraftButton = document.getElementById("importWorkingDraft");
+var clearWorkingDraftButton = document.getElementById("clearWorkingDraft");
+var workingDraftFileInput = document.getElementById("workingDraftFileInput");
 
 var dashboardDateTitle = document.getElementById("dashboardDateTitle");
 var dashboardMonthInput = document.getElementById("dashboardMonthInput");
@@ -95,6 +112,9 @@ var trendPieSubtitle = document.getElementById("trendPieSubtitle");
 var trendPieTileToggle = document.getElementById("trendPieTileToggle");
 var trendTilePieViewControls = document.getElementById("trendTilePieViewControls");
 var trendTilePieViewButtons = Array.prototype.slice.call(document.querySelectorAll("[data-trend-tile-pie-view]"));
+var dashboardSecondaryButtons = Array.prototype.slice.call(document.querySelectorAll("[data-dashboard-secondary]"));
+var dashboardAnalysisPanel = document.getElementById("dashboardAnalysisPanel");
+var dashboardMapPanel = document.getElementById("dashboardMapPanel");
 var orderLocationMap = document.getElementById("orderLocationMap");
 var orderMapSubtitle = document.getElementById("orderMapSubtitle");
 var orderMapStatus = document.getElementById("orderMapStatus");
@@ -120,7 +140,6 @@ var historyPagination = document.getElementById("historyPagination");
 var historyPrevPage = document.getElementById("historyPrevPage");
 var historyNextPage = document.getElementById("historyNextPage");
 var historyPageInfo = document.getElementById("historyPageInfo");
-var clearAllOrdersBtn = document.getElementById("clearAllOrders");
 var recordDetail = document.getElementById("recordDetail");
 var recordDetailTitle = document.getElementById("recordDetailTitle");
 var recordDetailSubtitle = document.getElementById("recordDetailSubtitle");
@@ -132,10 +151,10 @@ var activeTrendYear = new Date().getFullYear();
 var activeTrendMonth = new Date().getMonth() + 1;
 var activeTrendPieMode = "overview";
 var activeTrendTilePieView = "brand";
+var activeDashboardSecondary = "analysis";
 var activeDashboardMonth = getMonthKey(new Date());
 var activeHistoryPage = 1;
 var HISTORY_PAGE_SIZE = 30;
-var DELIVERY_METHOD_OPTIONS = ["", "自提", "包配送", "三轮车配送"];
 var activeTrendPointKey = "";
 var trendPointDetailsByKey = {};
 var trendYearMobilePicker = null;
@@ -162,13 +181,65 @@ var orderMapImageLoadPromises = {};
 var orderMapImageVersions = {};
 var recordMapImagePreviewTokens = {};
 var orderMapResizeTimer = null;
-
 function getConfig() {
   return currentConfig;
 }
 
+initFeedback();
+
+function isAdminUser() {
+  return hasCurrentUserRole("ADMIN");
+}
+
 var shippingPage = initShippingPage({ getConfig: getConfig });
-var adminPage = initAdminPage({ getConfig: getConfig });
+var adminPage = initAdminPage({
+  getConfig: getConfig,
+  isAdmin: isAdminUser,
+  onClearOrders: requestClearAllOrders
+});
+
+function formatSyncTime(value) {
+  var date = new Date(value || "");
+  if (Number.isNaN(date.getTime())) return "尚未同步";
+  return String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0") + " " + String(date.getHours()).padStart(2, "0") + ":" + String(date.getMinutes()).padStart(2, "0");
+}
+
+function renderSyncState(state) {
+  var current = state || getOrderSyncState();
+  if (!syncStatusButton || !syncStatusText || !syncStatusMeta) return;
+  syncStatusButton.dataset.state = current.state;
+  if (current.state === "local-only") {
+    syncStatusText.textContent = "本机模式";
+    syncStatusMeta.textContent = "数据保存在此浏览器";
+  } else if (current.state === "local-pending") {
+    syncStatusText.textContent = "待同步 " + current.pendingCount + " 条";
+    syncStatusMeta.textContent = "点击重新同步";
+  } else if (current.state === "connection-error") {
+    syncStatusText.textContent = "连接失败";
+    syncStatusMeta.textContent = "点击重试";
+  } else {
+    syncStatusText.textContent = "服务器已同步";
+    syncStatusMeta.textContent = formatSyncTime(current.lastSyncedAt);
+  }
+}
+
+function applyCurrentUserUi() {
+  var user = getCurrentAuthUser();
+  if (currentUserName) currentUserName.textContent = user && (user.displayName || user.username) ? (user.displayName || user.username) : "当前用户";
+  if (adminTopToggle) adminTopToggle.hidden = !isAdminUser();
+}
+
+function setDashboardSecondary(view) {
+  activeDashboardSecondary = view === "map" ? "map" : "analysis";
+  if (dashboardAnalysisPanel) dashboardAnalysisPanel.hidden = activeDashboardSecondary !== "analysis";
+  if (dashboardMapPanel) dashboardMapPanel.hidden = activeDashboardSecondary !== "map";
+  dashboardSecondaryButtons.forEach(function (button) {
+    var active = button.getAttribute("data-dashboard-secondary") === activeDashboardSecondary;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  if (activeDashboardSecondary === "map") scheduleOrderMapLayout(orderMapState.token, orderMapState.lastPoints);
+}
 
 function formatArea(value) {
   return formatNum(Number(value), 4);
@@ -1037,13 +1108,22 @@ function formatCompletionMonth(value) {
   return match[1] + "年" + Number(match[2]) + "月建成";
 }
 
-function renderDeliveryMethodOptions(selectedValue) {
-  var selected = String(selectedValue || "").trim();
-  return DELIVERY_METHOD_OPTIONS.map(function (value) {
-    var label = value || "请选择";
-    var selectedAttr = value === selected ? " selected" : "";
-    return "<option value='" + escapeHtml(value) + "'" + selectedAttr + ">" + escapeHtml(label) + "</option>";
+function renderConfiguredOrderOptions(items, selectedValue) {
+  var model = buildConfiguredSelectOptions(items, selectedValue);
+  return model.options.map(function (item) {
+    var selectedAttr = item.value === model.selectedValue ? " selected" : "";
+    var disabledAttr = item.legacy ? " disabled" : "";
+    return "<option value='" + escapeHtml(item.value) + "'" + selectedAttr + disabledAttr + ">" + escapeHtml(item.label) + "</option>";
   }).join("");
+}
+
+function renderDeliveryMethodOptions(selectedValue) {
+  return renderConfiguredOrderOptions(currentConfig.basics.deliveryMethods, selectedValue);
+}
+
+function renderGalvanizingProcessOptions(selectedValue) {
+  var selected = String(selectedValue || "").trim().replace(/^镀锌工艺\s*[：:]\s*/, "");
+  return renderConfiguredOrderOptions(currentConfig.basics.galvanizingProcesses, selected);
 }
 
 function getOrderDateTime(order) {
@@ -1444,7 +1524,7 @@ function applyConfigToRuntime(nextConfig) {
 }
 
 function refreshConfigFromPreferredSource() {
-  loadConfigWithApiFallback().then(function (config) {
+  return loadConfigWithApiFallback().then(function (config) {
     applyConfigToRuntime(config);
   });
 }
@@ -1457,6 +1537,82 @@ function hasDraftContent(draft) {
     (items.steels && items.steels.length) ||
     (items.otherTiles && items.otherTiles.length)
   );
+}
+
+function getCurrentWorkingDraftOwner() {
+  var user = getCurrentAuthUser();
+  return String(user && user.username || "local").trim() || "local";
+}
+
+function setWorkingDraftStatus(message, isError) {
+  if (!workingDraftStatus) return;
+  workingDraftStatus.textContent = String(message || "");
+  workingDraftStatus.classList.toggle("is-error", Boolean(isError));
+}
+
+function downloadCurrentWorkingDraft() {
+  var draft = shippingPage.captureWorkingDraft();
+  if (!hasWorkingDraftContent(draft)) {
+    showToast("当前没有需要保存的订单草稿。", "warning");
+    return;
+  }
+  var exported = exportWorkingDraft(getCurrentWorkingDraftOwner(), draft);
+  var blob = new Blob([exported.json], { type: "application/json;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = exported.fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  setWorkingDraftStatus("草稿已保存为本地文件", false);
+  showToast("订单草稿已保存到本地文件。", "success");
+}
+
+function readWorkingDraftFile(file) {
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function (event) { resolve(String(event.target && event.target.result || "")); };
+    reader.onerror = function () { reject(new Error("无法读取草稿文件。")); };
+    reader.readAsText(file, "utf-8");
+  });
+}
+
+function importWorkingDraftFromFile(file) {
+  if (!file) return Promise.resolve();
+  return readWorkingDraftFile(file).then(function (text) {
+    var envelope = parseWorkingDraftFile(text);
+    var confirmPromise = shippingPage.hasWorkingDraftContent() ? confirmAction({
+      title: "覆盖当前录入？",
+      message: "导入草稿会替换当前尚未保存的订单内容。",
+      confirmLabel: "确认导入",
+      danger: false
+    }) : Promise.resolve(true);
+    return confirmPromise.then(function (confirmed) {
+      if (!confirmed) return;
+      shippingPage.restoreWorkingDraft(envelope.draft);
+      setWorkingDraftStatus("已从本地文件导入草稿", false);
+      showToast("订单草稿已从本地文件导入。", "success");
+    });
+  }).catch(function (error) {
+    showToast(error && error.message ? error.message : "草稿导入失败。", "error");
+  }).finally(function () {
+    if (workingDraftFileInput) workingDraftFileInput.value = "";
+  });
+}
+
+function requestClearWorkingForm() {
+  return confirmAction({
+    title: "清空当前录入？",
+    message: "当前页面中尚未保存的订单内容会被清除。",
+    confirmLabel: "确认清空"
+  }).then(function (confirmed) {
+    if (!confirmed) return;
+    shippingPage.resetWorkingForm();
+    setWorkingDraftStatus("当前录入已清空", false);
+    showToast("当前录入已清空。", "success");
+  });
 }
 
 function setAuthPasswordVisible(isVisible) {
@@ -1499,7 +1655,12 @@ function renderAuthGate() {
 }
 
 function enterApplication() {
+  shippingPage.resetWorkingForm();
+  setWorkingDraftStatus("草稿不会自动保存，请手动保存到本地文件", false);
   authView.hidden = true;
+  applyCurrentUserUi();
+  renderSyncState();
+  setDashboardSecondary(activeDashboardSecondary);
   renderAll();
   showView("dashboardView");
   refreshConfigFromPreferredSource();
@@ -1507,6 +1668,8 @@ function enterApplication() {
 }
 
 window.addEventListener("erp-api-unauthorized", function () {
+  shippingPage.resetWorkingForm();
+  setWorkingDraftStatus("草稿不会自动保存，请手动保存到本地文件", false);
   logout();
   recordDetail.hidden = true;
   renderAuthGate();
@@ -1515,8 +1678,11 @@ window.addEventListener("erp-api-unauthorized", function () {
 window.addEventListener("resize", queueOrderMapResize);
 
 function refreshOrdersFromPreferredSource() {
-  loadOrdersWithApiFallback().then(function () {
+  retryPendingOrderSync().then(function () {
+    return loadOrdersWithApiFallback();
+  }).then(function () {
     renderAll();
+    renderSyncState();
   });
 }
 
@@ -1526,6 +1692,10 @@ function showView(viewId) {
     return;
   }
   if (viewId === "adminView") {
+    if (!isAdminUser()) {
+      showToast("当前账号没有系统管理权限。", "warning");
+      return;
+    }
     authView.hidden = true;
     workspaceHeader.hidden = true;
     businessViews.forEach(function (view) { view.hidden = true; });
@@ -1546,7 +1716,7 @@ function showView(viewId) {
   });
   if (viewId === "dashboardView") {
     renderDashboard();
-    scheduleOrderMapLayout(orderMapState.token, orderMapState.lastPoints);
+    setDashboardSecondary(activeDashboardSecondary);
   }
   if (viewId === "shippingView") shippingPage.recalc();
   if (viewId === "historyView") renderHistory();
@@ -1637,7 +1807,7 @@ function renderHistory() {
       "<td><div class='history-actions'>" +
       "<button type='button' class='btn btn-neutral compact-btn' data-record-action='view' data-order-id='" + escapeHtml(order.id) + "'>查看</button>" +
       "<button type='button' class='btn btn-soft compact-btn' data-record-action='edit' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-edit'></use></svg><span>编辑</span></button>" +
-      "<button type='button' class='btn btn-danger compact-btn' data-record-action='delete' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-trash'></use></svg><span>删除</span></button>" +
+      (isAdminUser() ? "<button type='button' class='btn btn-danger compact-btn' data-record-action='delete' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-trash'></use></svg><span>删除</span></button>" : "") +
       "</div></td>" +
       "</tr>";
   }).join("");
@@ -1657,7 +1827,7 @@ function renderOrderMapImageSection(order) {
   var actions = isApiConfigured() ? (
     "<div class='record-actions map-image-actions'>" +
     "<label class='btn btn-soft compact-btn map-image-upload-trigger'><svg class='ui-icon' aria-hidden='true'><use href='#icon-upload'></use></svg><span>上传图片</span><input class='visually-hidden-file' data-map-image-input data-order-id='" + escapedOrderId + "' type='file' accept='image/jpeg,image/png,image/webp' /></label>" +
-    "<button type='button' class='btn btn-danger compact-btn' data-map-image-delete data-order-id='" + escapedOrderId + "' disabled><svg class='ui-icon' aria-hidden='true'><use href='#icon-trash'></use></svg><span>删除图片</span></button>" +
+    (isAdminUser() ? "<button type='button' class='btn btn-danger compact-btn' data-map-image-delete data-order-id='" + escapedOrderId + "' disabled><svg class='ui-icon' aria-hidden='true'><use href='#icon-trash'></use></svg><span>删除图片</span></button>" : "") +
     "</div>"
   ) : disabledContent;
   return "<section class='detail-section order-map-image-section' data-map-image-section data-order-id='" + escapedOrderId + "'>" +
@@ -1743,7 +1913,7 @@ function uploadRecordMapImage(orderId, file) {
   var id = getOrderMapImageOrderId(orderId);
   if (!id || !file) return;
   if (!isApiConfigured()) {
-    window.alert("当前未连接后端 API，地图展示图片暂不可保存。");
+    showToast("当前未连接后端 API，地图展示图片暂不可保存。", "warning");
     return;
   }
   bumpOrderMapImageVersion(id);
@@ -1770,7 +1940,7 @@ function uploadRecordMapImage(orderId, file) {
   }).catch(function (error) {
     setRecordMapImagePreview(id, getCachedOrderMapImageUrl(id), getCachedOrderMapImageUrl(id) ? "" : "上传失败");
     setRecordMapImageStatus(id, "上传失败", "error");
-    window.alert(getOrderMapImageErrorMessage(error));
+    showToast(getOrderMapImageErrorMessage(error), "error");
   }).finally(function () {
     setRecordMapImageBusy(id, false);
   });
@@ -1778,22 +1948,25 @@ function uploadRecordMapImage(orderId, file) {
 
 function deleteRecordMapImage(orderId) {
   var id = getOrderMapImageOrderId(orderId);
-  if (!id || !isApiConfigured()) return;
-  if (!window.confirm("确定删除这张地图展示图片吗？")) return;
-  bumpOrderMapImageVersion(id);
-  recordMapImagePreviewTokens[id] = (recordMapImagePreviewTokens[id] || 0) + 1;
-  setRecordMapImageBusy(id, true);
-  setRecordMapImageStatus(id, "删除中", "loading");
-  deleteOrderMapImageFromApi(id).then(function () {
-    revokeOrderMapImageUrl(id);
-    setRecordMapImagePreview(id, "", "暂无图片");
-    setRecordMapImageStatus(id, "暂无图片", "idle");
-    refreshOpenOrderInfoForOrder(id, "none");
-  }).catch(function (error) {
-    setRecordMapImageStatus(id, "删除失败", "error");
-    window.alert(getOrderMapImageErrorMessage(error));
-  }).finally(function () {
-    setRecordMapImageBusy(id, false);
+  if (!id || !isApiConfigured() || !isAdminUser()) return;
+  confirmAction({ title: "删除地图图片", message: "删除后无法恢复，确定继续吗？", confirmLabel: "删除图片" }).then(function (confirmed) {
+    if (!confirmed) return;
+    bumpOrderMapImageVersion(id);
+    recordMapImagePreviewTokens[id] = (recordMapImagePreviewTokens[id] || 0) + 1;
+    setRecordMapImageBusy(id, true);
+    setRecordMapImageStatus(id, "删除中", "loading");
+    deleteOrderMapImageFromApi(id).then(function () {
+      revokeOrderMapImageUrl(id);
+      setRecordMapImagePreview(id, "", "暂无图片");
+      setRecordMapImageStatus(id, "暂无图片", "idle");
+      refreshOpenOrderInfoForOrder(id, "none");
+      showToast("地图图片已删除。", "success");
+    }).catch(function (error) {
+      setRecordMapImageStatus(id, "删除失败", "error");
+      showToast(getOrderMapImageErrorMessage(error), "error");
+    }).finally(function () {
+      setRecordMapImageBusy(id, false);
+    });
   });
 }
 
@@ -1810,7 +1983,7 @@ function renderRecordDetail(order, mode) {
       "<label class='field'><span>客户名称</span><input name='customerName' type='text' value='" + escapeHtml(order.customerName) + "' /></label>" +
       "<label class='field'><span>颜色</span><input name='tileColor' type='text' value='" + escapeHtml(order.tileColor) + "' /></label>" +
       "<label class='field'><span>钢材类别</span><input name='steelCategory' type='text' value='" + escapeHtml(order.steelCategory || "") + "' /></label>" +
-      "<label class='field'><span>镀锌工艺</span><input name='galvanizingProcess' type='text' value='" + escapeHtml(order.galvanizingProcess || "") + "' /></label>" +
+      "<label class='field'><span>镀锌工艺</span><select name='galvanizingProcess'>" + renderGalvanizingProcessOptions(order.galvanizingProcess) + "</select></label>" +
       "<label class='field'><span>配送方式</span><select name='deliveryMethod'>" + renderDeliveryMethodOptions(order.deliveryMethod) + "</select></label>" +
       "<label class='field span-2'><span>收货地址</span><input name='deliveryAddress' type='text' value='" + escapeHtml(order.deliveryAddress) + "' /></label>" +
       "<label class='field'><span>建成年月</span><input name='completionMonth' type='month' value='" + escapeHtml(order.completionMonth) + "' /></label>" +
@@ -1853,10 +2026,12 @@ function renderRecordDetail(order, mode) {
     renderItemSection("钢铁材料", ["名称", "数量", "单位", "单价", "小计"], items.steels, function (item) {
       return "<tr><td>" + escapeHtml(item.name) + "</td><td>" + escapeHtml(item.qty) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
     }) +
-    renderItemSection("其他瓦", ["名称", "长度", "数量", "单位", "单价", "小计"], items.otherTiles, function (item) {
-      return "<tr><td>" + escapeHtml(item.name) + "</td><td>" + escapeHtml(item.length) + "</td><td>" + escapeHtml(item.qty) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
+    renderItemSection("其他瓦", ["名称", "单片长度", "片数", "总长度", "单位", "单价", "小计"], items.otherTiles, function (item) {
+      return "<tr><td>" + escapeHtml(item.name) + "</td><td>" + escapeHtml(item.length) + "</td><td>" + escapeHtml(item.qty) + "</td><td>" + formatTrimFixed(computeOtherTileTotalLength(item.length, item.qty), 3) + "</td><td>" + escapeHtml(item.unit) + "</td><td>" + formatMoney(item.price) + "</td><td>" + formatMoney(item.subtotal) + "</td></tr>";
     }) +
-    "<div class='record-actions'><button type='button' class='btn btn-soft' data-detail-action='edit' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-edit'></use></svg><span>编辑记录</span></button><button type='button' class='btn btn-danger' data-detail-action='delete' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-trash'></use></svg><span>删除记录</span></button></div>";
+    "<div class='record-actions'><button type='button' class='btn btn-soft' data-detail-action='edit' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-edit'></use></svg><span>编辑记录</span></button>" +
+    (isAdminUser() ? "<button type='button' class='btn btn-danger' data-detail-action='delete' data-order-id='" + escapeHtml(order.id) + "'><svg class='ui-icon' aria-hidden='true'><use href='#icon-trash'></use></svg><span>删除记录</span></button>" : "") +
+    "</div>";
   refreshRecordMapImagePreview(order.id);
 }
 
@@ -1869,7 +2044,7 @@ function findOrder(orderId) {
 function openRecord(orderId, mode) {
   var order = findOrder(orderId);
   if (!order) {
-    window.alert("没有找到这条订单记录。");
+    showToast("没有找到这条订单记录。", "error");
     renderAll();
     return;
   }
@@ -1878,13 +2053,17 @@ function openRecord(orderId, mode) {
 
 function removeOrder(orderId) {
   var order = findOrder(orderId);
-  if (!order) return;
-  if (!window.confirm("确定删除 " + getOrderCustomer(order) + " 在 " + order.orderDate + " 的订单记录吗？")) return;
-  deleteOrderWithApiFallback(order.id, order).then(function () {
-    recordDetail.hidden = true;
-    renderAll();
-  }).catch(function () {
-    renderAll();
+  if (!order || !isAdminUser()) return;
+  confirmAction({ title: "删除订单", message: "确定删除 “" + getOrderCustomer(order) + "” 在 " + order.orderDate + " 的订单记录吗？", confirmLabel: "删除订单" }).then(function (confirmed) {
+    if (!confirmed) return;
+    deleteOrderWithApiFallback(order.id, order).then(function () {
+      recordDetail.hidden = true;
+      renderAll();
+      showToast("订单已删除。", "success");
+    }).catch(function (error) {
+      showToast(error && error.message ? error.message : "服务器删除失败，本地订单已保留。", "error");
+      renderAll();
+    });
   });
 }
 
@@ -1948,7 +2127,7 @@ function resolveOrderLocation(order, previousOrder) {
 }
 
 function setOrderSaveBusy(busy) {
-  [saveOrderBtn, saveOrderSideBtn].forEach(function (button) {
+  [saveOrderBtn].forEach(function (button) {
     if (!button) return;
     button.disabled = Boolean(busy);
     button.classList.toggle("is-loading", Boolean(busy));
@@ -1979,13 +2158,14 @@ function saveRecordEdit(form) {
     }
   }));
   resolveOrderLocation(updated, order).then(function (result) {
-    return updateOrderWithApiFallback(order.id, result.order).then(function (saved) {
+    return updateOrderWithApiFallback(order.id, result.order).then(function (savedResult) {
       renderAll();
-      openRecord(saved.id, "view");
-      if (result.warning) window.alert(result.warning);
+      openRecord(savedResult.order.id, "view");
+      var warning = [savedResult.warning, result.warning].filter(Boolean).join(" ");
+      showToast(warning || "订单修改已保存。", warning ? "warning" : "success");
     });
   }).catch(function (error) {
-    window.alert(error.message || "订单保存失败。");
+    showToast(error.message || "订单保存失败。", "error");
   });
 }
 
@@ -2002,7 +2182,7 @@ function setDashboardMonth(monthKey) {
 function saveCurrentOrder() {
   var draft = shippingPage.createOrderDraft();
   if (!hasDraftContent(draft)) {
-    window.alert("当前没有可保存的主瓦、配件、钢铁材料或其他瓦数据。");
+    showToast("当前没有可保存的主瓦、配件、钢铁材料或其他瓦数据。", "warning");
     return;
   }
   var now = new Date();
@@ -2012,12 +2192,13 @@ function saveCurrentOrder() {
   }));
   setOrderSaveBusy(true);
   resolveOrderLocation(order, null).then(function (result) {
-    return upsertOrderWithApiFallback(result.order).then(function (saved) {
+    return upsertOrderWithApiFallback(result.order).then(function (savedResult) {
       renderAll();
-      window.alert("订单已保存。" + (result.warning ? "\n" + result.warning : ""));
+      var warning = [savedResult.warning, result.warning].filter(Boolean).join(" ");
+      showToast(warning || (savedResult.persistence === "local-only" ? "订单已保存到本机。" : "订单已保存到服务器。"), warning ? "warning" : "success");
     });
   }).catch(function (error) {
-    window.alert(error.message || "订单保存失败。");
+    showToast(error.message || "订单保存失败。", "error");
   }).finally(function () {
     setOrderSaveBusy(false);
   });
@@ -2076,12 +2257,36 @@ authForm.addEventListener("submit", function (event) {
 
 if (adminTopToggle) adminTopToggle.addEventListener("click", function () { showView("adminView"); });
 logoutButton.addEventListener("click", function () {
+  shippingPage.resetWorkingForm();
+  setWorkingDraftStatus("草稿不会自动保存，请手动保存到本地文件", false);
   logout();
   renderAuthGate();
 });
 backToShipping.addEventListener("click", function () { showView("shippingView"); });
 saveOrderBtn.addEventListener("click", saveCurrentOrder);
-saveOrderSideBtn.addEventListener("click", saveCurrentOrder);
+
+if (exportWorkingDraftButton) exportWorkingDraftButton.addEventListener("click", downloadCurrentWorkingDraft);
+if (importWorkingDraftButton) importWorkingDraftButton.addEventListener("click", function () {
+  if (workingDraftFileInput) workingDraftFileInput.click();
+});
+if (workingDraftFileInput) workingDraftFileInput.addEventListener("change", function () {
+  importWorkingDraftFromFile(workingDraftFileInput.files && workingDraftFileInput.files[0]);
+});
+if (clearWorkingDraftButton) clearWorkingDraftButton.addEventListener("click", requestClearWorkingForm);
+
+if (syncStatusButton) syncStatusButton.addEventListener("click", function () {
+  syncStatusButton.disabled = true;
+  retryPendingOrderSync().then(function (state) {
+    renderSyncState(state);
+    renderAll();
+    if (state.state === "local-only") showToast("当前为本机模式，数据不会上传到服务器。", "info");
+    else if (state.state === "connection-error") showToast("仍无法连接服务器，请稍后重试。", "error");
+    else if (state.pendingCount) showToast("仍有 " + state.pendingCount + " 条订单等待同步。", "warning");
+    else showToast("订单数据已同步。", "success");
+  }).finally(function () {
+    syncStatusButton.disabled = false;
+  });
+});
 
 if (dashboardMonthInput) {
   dashboardMonthInput.addEventListener("change", function () {
@@ -2161,6 +2366,12 @@ trendTilePieViewButtons.forEach(function (button) {
     activeTrendTilePieView = button.getAttribute("data-trend-tile-pie-view") || "brand";
     activeTrendPieMode = "tile";
     renderTrend(loadOrders());
+  });
+});
+
+dashboardSecondaryButtons.forEach(function (button) {
+  button.addEventListener("click", function () {
+    setDashboardSecondary(button.getAttribute("data-dashboard-secondary"));
   });
 });
 
@@ -2283,18 +2494,38 @@ closeRecordDetail.addEventListener("click", function () {
   recordDetail.hidden = true;
 });
 
-clearAllOrdersBtn.addEventListener("click", function () {
-  if (!window.confirm("确定清空全部订单数据吗？此操作不可撤销。")) return;
-  if (!window.confirm("请再次确认：清空后需要重新创建订单或从后台恢复。")) return;
-  clearOrdersWithApiFallback().then(function () {
-    recordDetail.hidden = true;
-    renderAll();
-  }).catch(function (error) {
-    console.warn("Order bulk clear failed.", {
-      reason: error && error.message ? error.message : String(error || "Unknown error")
+function requestClearAllOrders() {
+  if (!isAdminUser()) return Promise.resolve(false);
+  return confirmAction({ title: "清空全部订单", message: "此操作会删除服务器和本机中的全部订单，且无法恢复。", confirmLabel: "继续" }).then(function (confirmed) {
+    if (!confirmed) return false;
+    return confirmAction({ title: "最后确认", message: "请再次确认：清空后只能通过备份恢复订单。", confirmLabel: "确认清空" });
+  }).then(function (confirmed) {
+    if (!confirmed) return false;
+    return clearOrdersWithApiFallback().then(function () {
+      recordDetail.hidden = true;
+      renderAll();
+      showToast("订单清理操作已完成。", "success");
+      return true;
+    }).catch(function (error) {
+      console.warn("Order bulk clear failed.", {
+        reason: error && error.message ? error.message : String(error || "Unknown error")
+      });
+      showToast(error && error.message ? error.message : "订单清理失败，未完成的记录已保留。", "error");
+      renderAll();
+      return false;
     });
+  });
+}
+
+window.addEventListener("online", function () {
+  retryPendingOrderSync().then(function (state) {
+    renderSyncState(state);
     renderAll();
   });
+});
+
+window.addEventListener("erp-sync-state-change", function (event) {
+  renderSyncState(event && event.detail);
 });
 
 subscribeConfigChange(function (nextConfig) {

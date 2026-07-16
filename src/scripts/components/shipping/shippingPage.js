@@ -12,6 +12,7 @@ import { evaluateCuttingAdviceFromApi, isApiConfigured } from "../../services/ap
 import { buildCuttingPlans, formatCuttingPlan } from "../../services/cuttingPlanner.js";
 import { buildPreferredReport } from "../../services/reportService.js";
 import { escapeHtml, formatMoney, formatNum, formatTrimFixed, parseNum } from "../../utils.js";
+import { showToast } from "../common/feedback.js";
 
 function sortBySort(items) {
   return (Array.isArray(items) ? items : []).slice().sort(function (a, b) {
@@ -25,6 +26,23 @@ function getEnabledItems(items) {
 
 function getOptionValue(item) {
   return item && item.value !== undefined && item.value !== null ? String(item.value) : "";
+}
+
+export function buildConfiguredSelectOptions(items, selectedValue) {
+  var selected = String(selectedValue || "").trim();
+  var configured = [];
+  getEnabledItems(items).forEach(function (item) {
+    var value = getOptionValue(item).trim();
+    if (value && configured.indexOf(value) === -1) configured.push(value);
+  });
+  var options = [{ value: "", label: "请选择", legacy: false }];
+  configured.forEach(function (value) {
+    options.push({ value: value, label: value, legacy: false });
+  });
+  if (selected && configured.indexOf(selected) === -1) {
+    options.push({ value: selected, label: selected + "（原值）", legacy: true });
+  }
+  return { selectedValue: selected, options: options };
 }
 
 function getCatalogPrice(item) {
@@ -52,6 +70,33 @@ export function attachMainTileSegmentLength(rows, segmentLength) {
   });
 }
 
+export function computeOtherTileTotalLength(singleLength, pieceCount) {
+  return computeLineSubtotal(singleLength, pieceCount);
+}
+
+export function computeOtherTileSubtotal(singleLength, pieceCount, unitPrice) {
+  return computeLineSubtotal(computeOtherTileTotalLength(singleLength, pieceCount), unitPrice);
+}
+
+export function hasWorkingDraftContent(draft) {
+  var source = draft && typeof draft === "object" ? draft : {};
+  var order = source.order && typeof source.order === "object" ? source.order : {};
+  var meaningfulOrderFields = [
+    order.customerName,
+    order.tileColor,
+    order.steelCategory,
+    order.galvanizingProcess,
+    order.deliveryMethod,
+    order.deliveryAddress,
+    order.completionMonth,
+    order.remark
+  ];
+  if (meaningfulOrderFields.some(function (value) { return String(value || "").trim(); })) return true;
+  return [source.mainRows, source.accessories, source.steels, source.otherTiles].some(function (items) {
+    return Array.isArray(items) && items.length > 0;
+  });
+}
+
 function getDisplayName(item) {
   if (!item) return "";
   return [item.name, item.spec].filter(Boolean).join(" ").trim();
@@ -62,7 +107,6 @@ export function initShippingPage(options) {
   var currentConfig = getConfig();
   var rowsEl = document.getElementById("rows");
   var exportPdfBtn = document.getElementById("exportPdf");
-  var exportPdfSideBtn = document.getElementById("exportPdfSide");
   var totalAreaEl = document.getElementById("totalArea");
   var mainAmountEl = document.getElementById("mainAmount");
   var accAmountEl = document.getElementById("accAmount");
@@ -105,6 +149,7 @@ export function initShippingPage(options) {
   var addOtherTileRowBtn = document.getElementById("addOtherTileRow");
   var otherTileAmountEl = document.getElementById("otherTileAmount");
   var otherTileAmountFooterEl = document.getElementById("otherTileAmountFooter");
+  var orderAdvanced = document.querySelector(".order-advanced");
   var fixedWidthFact = document.getElementById("fixedWidthFact");
   var defaultSegmentFact = document.getElementById("defaultSegmentFact");
   var fixedWidthDisplay = document.getElementById("fixedWidthDisplay");
@@ -186,6 +231,16 @@ export function initShippingPage(options) {
     selectEl.value = hasPreferred ? preferred : (enabled.length ? getOptionValue(enabled[0]) : "");
   }
 
+  function renderOptionalSelect(selectEl, optionsList, preferredValue) {
+    if (!selectEl) return;
+    var selected = preferredValue !== undefined && preferredValue !== null ? preferredValue : selectEl.value;
+    var model = buildConfiguredSelectOptions(optionsList, selected);
+    selectEl.innerHTML = model.options.map(function (item) {
+      return '<option value="' + escapeHtml(item.value) + '"' + (item.legacy ? " disabled" : "") + ">" + escapeHtml(item.label) + "</option>";
+    }).join("");
+    selectEl.value = model.selectedValue;
+  }
+
   function renderQuickFacts() {
     if (fixedWidthFact) fixedWidthFact.textContent = "宽度 " + getFixedWidth() + " m";
     if (defaultSegmentFact) defaultSegmentFact.textContent = "默认节长 " + currentConfig.basics.defaultSegmentLength + " m";
@@ -228,6 +283,8 @@ export function initShippingPage(options) {
     renderSelect(steelTubeSpecSelect, currentConfig.steel.tubeSpecs);
     renderSelect(steelTubeThicknessSelect, currentConfig.steel.thicknessOptions);
     renderSelect(steelBoltSpecSelect, currentConfig.steel.boltSpecs);
+    renderOptionalSelect(deliveryMethodInput, currentConfig.basics.deliveryMethods);
+    renderOptionalSelect(galvanizingProcessInput, currentConfig.basics.galvanizingProcesses);
     renderDataList(tileColorOptions, currentConfig.basics.colorOptions);
     renderDataList(unitOptions, currentConfig.unitOptions);
     renderQuickFacts();
@@ -311,21 +368,6 @@ export function initShippingPage(options) {
       '<div class="metric"><span>面积（㎡）</span><strong class="out-area">—</strong></div>' +
       '<button type="button" class="icon-btn btn-del" title="删除主瓦行" aria-label="删除主瓦行">' + iconSvg("trash") + '</button>';
 
-    function handleMainRowEdit() {
-      updateSlopePlaceholder(row);
-      recalcAll();
-      if (row === rowsEl.lastElementChild && !isMainRowBlank(row)) {
-        ensureTrailingBlankRow();
-      }
-    }
-    row.addEventListener("input", handleMainRowEdit);
-    row.addEventListener("change", handleMainRowEdit);
-    row.querySelector(".btn-del").addEventListener("click", function () {
-      row.remove();
-      ensureTrailingBlankRow();
-      renumberRows();
-      recalcAll();
-    });
     updateSlopePlaceholder(row);
     return row;
   }
@@ -426,11 +468,6 @@ export function initShippingPage(options) {
       '<label class="line-field"><span class="field-label">单价</span><input class="acc-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item, { blankZero: true })) + '" /></label>' +
       '<div class="subtotal-box"><span>小计</span><output class="acc-subtotal">—</output></div>' +
       '<button type="button" class="icon-btn acc-del" title="删除配件" aria-label="删除配件">' + iconSvg("trash") + '</button>';
-    row.addEventListener("input", recalcAccessoryTotals);
-    row.querySelector(".acc-del").addEventListener("click", function () {
-      row.remove();
-      recalcAccessoryTotals();
-    });
     return row;
   }
 
@@ -479,11 +516,6 @@ export function initShippingPage(options) {
       '<label class="line-field"><span class="field-label">单价</span><input class="steel-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item, { blankZero: true })) + '" /></label>' +
       '<div class="subtotal-box"><span>小计</span><output class="steel-subtotal">—</output></div>' +
       '<button type="button" class="icon-btn steel-del" title="删除材料" aria-label="删除材料">' + iconSvg("trash") + '</button>';
-    row.addEventListener("input", recalcSteelTotals);
-    row.querySelector(".steel-del").addEventListener("click", function () {
-      row.remove();
-      recalcSteelTotals();
-    });
     return row;
   }
 
@@ -523,17 +555,13 @@ export function initShippingPage(options) {
     row.className = "line-row other-row";
     row.innerHTML =
       '<label class="line-field"><span class="field-label">名称</span><input class="other-tile-name" type="text" value="' + escapeHtml(name) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">长度</span><input class="other-tile-length" type="number" inputmode="decimal" step="0.001" /></label>' +
-      '<label class="line-field"><span class="field-label">数量</span><input class="other-tile-qty" type="number" inputmode="decimal" step="1" /></label>' +
+      '<label class="line-field"><span class="field-label">单片长度</span><input class="other-tile-length" type="number" inputmode="decimal" step="0.001" /></label>' +
+      '<label class="line-field"><span class="field-label">片数</span><input class="other-tile-qty" type="number" inputmode="decimal" step="1" /></label>' +
+      '<div class="subtotal-box other-tile-total-length-box"><span>总长度</span><output class="other-tile-total-length">—</output></div>' +
       '<label class="line-field"><span class="field-label">单位</span><input class="other-tile-unit" type="text" list="unitOptions" value="' + escapeHtml(defaultUnit) + '" /></label>' +
       '<label class="line-field"><span class="field-label">单价</span><input class="other-tile-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item)) + '" /></label>' +
       '<div class="subtotal-box"><span>小计</span><output class="other-tile-subtotal">—</output></div>' +
       '<button type="button" class="icon-btn other-tile-del" title="删除其他瓦" aria-label="删除其他瓦">' + iconSvg("trash") + '</button>';
-    row.addEventListener("input", recalcOtherTileTotals);
-    row.querySelector(".other-tile-del").addEventListener("click", function () {
-      row.remove();
-      recalcOtherTileTotals();
-    });
     return row;
   }
 
@@ -544,7 +572,7 @@ export function initShippingPage(options) {
       var qty = parseNum(row.querySelector(".other-tile-qty").value);
       var unit = row.querySelector(".other-tile-unit").value.trim();
       var price = parseNum(row.querySelector(".other-tile-price").value);
-      var subtotal = computeLineSubtotal(qty, price);
+      var subtotal = computeOtherTileSubtotal(length, qty, price);
       return { name: name, length: length, qty: qty, unit: unit, price: price, subtotal: subtotal };
     }).filter(function (item) {
       return item.name && Number.isFinite(item.subtotal);
@@ -554,9 +582,12 @@ export function initShippingPage(options) {
   function recalcOtherTileTotals() {
     var total = 0;
     Array.prototype.slice.call(otherTileRowsEl.querySelectorAll(".other-row")).forEach(function (row) {
+      var length = parseNum(row.querySelector(".other-tile-length").value);
       var qty = parseNum(row.querySelector(".other-tile-qty").value);
       var price = parseNum(row.querySelector(".other-tile-price").value);
-      var subtotal = computeLineSubtotal(qty, price);
+      var totalLength = computeOtherTileTotalLength(length, qty);
+      var subtotal = computeOtherTileSubtotal(length, qty, price);
+      row.querySelector(".other-tile-total-length").textContent = Number.isFinite(totalLength) ? formatTrimFixed(totalLength, 3) : "—";
       row.querySelector(".other-tile-subtotal").textContent = Number.isFinite(subtotal) ? formatMoney(subtotal) : "—";
       if (Number.isFinite(subtotal)) total += subtotal;
     });
@@ -597,6 +628,232 @@ export function initShippingPage(options) {
     Array.prototype.slice.call(container.querySelectorAll(".preset-btn")).forEach(function (button) {
       button.classList.remove("selected");
     });
+  }
+
+  function readElementValue(root, selector) {
+    var element = root && root.querySelector ? root.querySelector(selector) : null;
+    return element ? String(element.value || "") : "";
+  }
+
+  function setElementValue(root, selector, value) {
+    var element = root && root.querySelector ? root.querySelector(selector) : null;
+    if (element) element.value = value === null || value === undefined ? "" : String(value);
+  }
+
+  function hasAnyRawValue(item, keys) {
+    return keys.some(function (key) { return String(item[key] || "").trim(); });
+  }
+
+  function captureWorkingDraft() {
+    var mainRows = Array.prototype.slice.call(rowsEl.querySelectorAll(".calc-row")).map(function (row) {
+      return {
+        projectionLength: readElementValue(row, ".inp-proj"),
+        slopeMode: readElementValue(row, ".inp-slope-mode") || "percent",
+        slopeValue: readElementValue(row, ".inp-slope-value"),
+        length: readElementValue(row, ".inp-l"),
+        segmentCount: readElementValue(row, ".inp-seg"),
+        quantity: readElementValue(row, ".inp-q")
+      };
+    }).filter(function (row) {
+      return hasAnyRawValue(row, ["projectionLength", "slopeValue", "length", "segmentCount", "quantity"]);
+    });
+    var accessories = Array.prototype.slice.call(accessoryRowsEl.querySelectorAll(".acc-row")).map(function (row) {
+      return {
+        name: readElementValue(row, ".acc-name"),
+        quantity: readElementValue(row, ".acc-qty"),
+        unit: readElementValue(row, ".acc-unit"),
+        price: readElementValue(row, ".acc-price")
+      };
+    }).filter(function (row) { return hasAnyRawValue(row, ["name", "quantity", "price"]); });
+    var steels = Array.prototype.slice.call(steelRowsEl.querySelectorAll(".steel-row")).map(function (row) {
+      return {
+        name: readElementValue(row, ".steel-name"),
+        quantity: readElementValue(row, ".steel-qty"),
+        unit: readElementValue(row, ".steel-unit"),
+        price: readElementValue(row, ".steel-price")
+      };
+    }).filter(function (row) { return hasAnyRawValue(row, ["name", "quantity", "price"]); });
+    var otherTiles = Array.prototype.slice.call(otherTileRowsEl.querySelectorAll(".other-row")).map(function (row) {
+      return {
+        name: readElementValue(row, ".other-tile-name"),
+        length: readElementValue(row, ".other-tile-length"),
+        quantity: readElementValue(row, ".other-tile-qty"),
+        unit: readElementValue(row, ".other-tile-unit"),
+        price: readElementValue(row, ".other-tile-price")
+      };
+    }).filter(function (row) { return hasAnyRawValue(row, ["name", "length", "quantity", "price"]); });
+    var activePanel = Array.prototype.slice.call(panels).find(function (panel) { return panel.classList.contains("active"); });
+    return {
+      order: {
+        orderDate: orderDateInput ? orderDateInput.value : "",
+        customerName: customerNameInput ? customerNameInput.value : "",
+        tileColor: tileColorInput ? tileColorInput.value : "",
+        steelCategory: steelCategoryInput ? steelCategoryInput.value : "",
+        galvanizingProcess: galvanizingProcessInput ? galvanizingProcessInput.value : "",
+        deliveryMethod: deliveryMethodInput ? deliveryMethodInput.value : "",
+        deliveryAddress: deliveryAddressInput ? deliveryAddressInput.value : "",
+        completionMonth: completionMonthInput ? completionMonthInput.value : "",
+        remark: orderRemarkInput ? orderRemarkInput.value : ""
+      },
+      mainTile: {
+        segmentLength: globalSegmentInput ? globalSegmentInput.value : "",
+        unitPrice: unitPriceInput ? unitPriceInput.value : ""
+      },
+      mainRows: mainRows,
+      accessories: accessories,
+      steels: steels,
+      otherTiles: otherTiles,
+      view: {
+        activePanel: activePanel ? activePanel.id : "mainPanel",
+        advancedOpen: Boolean(orderAdvanced && orderAdvanced.open)
+      }
+    };
+  }
+
+  function ensureSegmentDraftOption(value) {
+    var text = String(value || "").trim();
+    if (!globalSegmentInput || !text) return;
+    var exists = Array.prototype.slice.call(globalSegmentInput.options).some(function (option) {
+      return option.value === text;
+    });
+    if (!exists) {
+      var option = document.createElement("option");
+      option.value = text;
+      option.textContent = text + "（草稿）";
+      globalSegmentInput.appendChild(option);
+    }
+    globalSegmentInput.value = text;
+  }
+
+  function resetCuttingAdviceState() {
+    cuttingEvaluationRequestId += 1;
+    hasGeneratedCuttingAdvice = false;
+    latestCuttingAdviceResult = null;
+    selectedPlan = null;
+    selectedPlanSignature = "";
+    cuttingEvaluation = null;
+    cuttingEvaluationStatus = "idle";
+    cuttingEvaluationMessage = "";
+    if (cuttingAdvicePanel) {
+      cuttingAdvicePanel.hidden = true;
+      cuttingAdvicePanel.innerHTML = "";
+    }
+  }
+
+  function restoreWorkingDraft(draft) {
+    var source = draft && typeof draft === "object" ? draft : {};
+    var order = source.order && typeof source.order === "object" ? source.order : {};
+    var mainTile = source.mainTile && typeof source.mainTile === "object" ? source.mainTile : {};
+    if (orderDateInput) orderDateInput.value = String(order.orderDate || "");
+    if (customerNameInput) customerNameInput.value = String(order.customerName || "");
+    if (tileColorInput) tileColorInput.value = String(order.tileColor || "");
+    if (steelCategoryInput) steelCategoryInput.value = String(order.steelCategory || "");
+    renderOptionalSelect(galvanizingProcessInput, currentConfig.basics.galvanizingProcesses, order.galvanizingProcess);
+    renderOptionalSelect(deliveryMethodInput, currentConfig.basics.deliveryMethods, order.deliveryMethod);
+    if (deliveryAddressInput) deliveryAddressInput.value = String(order.deliveryAddress || "");
+    if (completionMonthInput) completionMonthInput.value = String(order.completionMonth || "");
+    if (orderRemarkInput) orderRemarkInput.value = String(order.remark || "");
+    ensureSegmentDraftOption(mainTile.segmentLength);
+    if (unitPriceInput) unitPriceInput.value = String(mainTile.unitPrice || "");
+
+    rowsEl.innerHTML = "";
+    var mainRows = Array.isArray(source.mainRows) ? source.mainRows : [];
+    mainRows.forEach(function (item) {
+      var row = createMainRow();
+      setElementValue(row, ".inp-proj", item.projectionLength);
+      setElementValue(row, ".inp-slope-mode", item.slopeMode || "percent");
+      setElementValue(row, ".inp-slope-value", item.slopeValue);
+      setElementValue(row, ".inp-l", item.length);
+      setElementValue(row, ".inp-seg", item.segmentCount);
+      setElementValue(row, ".inp-q", item.quantity);
+      updateSlopePlaceholder(row);
+      rowsEl.appendChild(row);
+    });
+    var minimumMainRows = Math.max(12, mainRows.length ? mainRows.length + 1 : 12);
+    while (rowsEl.children.length < minimumMainRows) rowsEl.appendChild(createMainRow());
+    renumberRows();
+
+    accessoryRowsEl.innerHTML = "";
+    (Array.isArray(source.accessories) ? source.accessories : []).forEach(function (item) {
+      var row = createAccessoryRow("", false);
+      setElementValue(row, ".acc-name", item.name);
+      setElementValue(row, ".acc-qty", item.quantity);
+      setElementValue(row, ".acc-unit", item.unit);
+      setElementValue(row, ".acc-price", item.price);
+      accessoryRowsEl.appendChild(row);
+    });
+
+    steelRowsEl.innerHTML = "";
+    (Array.isArray(source.steels) ? source.steels : []).forEach(function (item) {
+      var row = createSteelRow("");
+      setElementValue(row, ".steel-name", item.name);
+      setElementValue(row, ".steel-qty", item.quantity);
+      setElementValue(row, ".steel-unit", item.unit);
+      setElementValue(row, ".steel-price", item.price);
+      steelRowsEl.appendChild(row);
+    });
+
+    otherTileRowsEl.innerHTML = "";
+    (Array.isArray(source.otherTiles) ? source.otherTiles : []).forEach(function (item) {
+      var row = createOtherTileRow("");
+      setElementValue(row, ".other-tile-name", item.name);
+      setElementValue(row, ".other-tile-length", item.length);
+      setElementValue(row, ".other-tile-qty", item.quantity);
+      setElementValue(row, ".other-tile-unit", item.unit);
+      setElementValue(row, ".other-tile-price", item.price);
+      otherTileRowsEl.appendChild(row);
+    });
+
+    clearPresetSelection(accPresetGrid);
+    clearPresetSelection(accPresetGridUncommon);
+    clearPresetSelection(steelPresetGrid);
+    clearPresetSelection(otherTilePresetGrid);
+    logoUploadInput.value = "";
+    reportLogoDataUrl = "";
+    clearLogoBtn.disabled = true;
+    resetCuttingAdviceState();
+    ensureOrderDate();
+    var view = source.view && typeof source.view === "object" ? source.view : {};
+    if (view.activePanel && document.getElementById(view.activePanel)) switchPanel(view.activePanel);
+    if (orderAdvanced) orderAdvanced.open = Boolean(view.advancedOpen);
+    recalcAll();
+    recalcAccessoryTotals();
+    recalcSteelTotals();
+    recalcOtherTileTotals();
+    return captureWorkingDraft();
+  }
+
+  function resetWorkingForm() {
+    var defaultPrice = Number(currentConfig.basics.mainTileDefaultPrice);
+    if (orderDateInput) orderDateInput.value = getDateOnly(new Date());
+    [customerNameInput, tileColorInput, steelCategoryInput, deliveryAddressInput, completionMonthInput, orderRemarkInput].forEach(function (input) {
+      if (input) input.value = "";
+    });
+    if (galvanizingProcessInput) galvanizingProcessInput.value = "";
+    if (deliveryMethodInput) deliveryMethodInput.value = "";
+    renderSelect(globalSegmentInput, currentConfig.basics.segmentLengths, currentConfig.basics.defaultSegmentLength);
+    if (unitPriceInput) unitPriceInput.value = Number.isFinite(defaultPrice) ? String(defaultPrice) : "";
+    rowsEl.innerHTML = "";
+    appendRows(12);
+    accessoryRowsEl.innerHTML = "";
+    steelRowsEl.innerHTML = "";
+    otherTileRowsEl.innerHTML = "";
+    clearPresetSelection(accPresetGrid);
+    clearPresetSelection(accPresetGridUncommon);
+    clearPresetSelection(steelPresetGrid);
+    clearPresetSelection(otherTilePresetGrid);
+    logoUploadInput.value = "";
+    reportLogoDataUrl = "";
+    clearLogoBtn.disabled = true;
+    resetCuttingAdviceState();
+    switchPanel("mainPanel");
+    if (orderAdvanced) orderAdvanced.open = false;
+    ensureTrailingBlankRow();
+    recalcAll();
+    recalcAccessoryTotals();
+    recalcSteelTotals();
+    recalcOtherTileTotals();
+    return captureWorkingDraft();
   }
 
   function getCurrentCuttingAdvice() {
@@ -981,7 +1238,7 @@ export function initShippingPage(options) {
   function openPrintWindow(html) {
     var reportWindow = window.open("", "_blank");
     if (!reportWindow) {
-      window.alert("浏览器拦截了报表窗口，请允许弹窗后重试。");
+      showToast("浏览器拦截了报表窗口，请允许弹窗后重试。", "warning");
       return false;
     }
     reportWindow.document.open();
@@ -1065,7 +1322,7 @@ export function initShippingPage(options) {
       openPrintWindow(report.html);
       return;
     }
-    window.alert("没有有效主瓦、配件、钢铁材料或其他瓦数据可导出。");
+    showToast("没有有效主瓦、配件、钢铁材料或其他瓦数据可导出。", "warning");
   }
 
   function addSteelTube() {
@@ -1099,6 +1356,42 @@ export function initShippingPage(options) {
 
   function preventNumberWheel(event) {
     if (event.target === document.activeElement) event.preventDefault();
+  }
+
+  function setupRowEventDelegation() {
+    var handleMainEdit = function (event) {
+      var row = event.target && event.target.closest ? event.target.closest(".calc-row") : null;
+      if (!row) return;
+      updateSlopePlaceholder(row);
+      recalcAll();
+      if (row === rowsEl.lastElementChild && !isMainRowBlank(row)) ensureTrailingBlankRow();
+    };
+    rowsEl.addEventListener("input", handleMainEdit);
+    rowsEl.addEventListener("change", handleMainEdit);
+    rowsEl.addEventListener("click", function (event) {
+      var button = event.target && event.target.closest ? event.target.closest(".btn-del") : null;
+      if (!button) return;
+      var row = button.closest(".calc-row");
+      if (row) row.remove();
+      ensureTrailingBlankRow();
+      renumberRows();
+      recalcAll();
+    });
+
+    [
+      { root: accessoryRowsEl, row: ".acc-row", remove: ".acc-del", recalc: recalcAccessoryTotals },
+      { root: steelRowsEl, row: ".steel-row", remove: ".steel-del", recalc: recalcSteelTotals },
+      { root: otherTileRowsEl, row: ".other-row", remove: ".other-tile-del", recalc: recalcOtherTileTotals }
+    ].forEach(function (binding) {
+      binding.root.addEventListener("input", binding.recalc);
+      binding.root.addEventListener("click", function (event) {
+        var button = event.target && event.target.closest ? event.target.closest(binding.remove) : null;
+        if (!button) return;
+        var row = button.closest(binding.row);
+        if (row) row.remove();
+        binding.recalc();
+      });
+    });
   }
 
   navTabs.forEach(function (button) {
@@ -1138,7 +1431,6 @@ export function initShippingPage(options) {
   unitPriceInput.addEventListener("input", recalcAll);
   globalSegmentInput.addEventListener("input", recalcAll);
   exportPdfBtn.addEventListener("click", exportPdfReport);
-  exportPdfSideBtn.addEventListener("click", exportPdfReport);
 
   logoUploadInput.addEventListener("change", function (event) {
     var file = event.target.files && event.target.files[0];
@@ -1148,14 +1440,14 @@ export function initShippingPage(options) {
       return;
     }
     if (!/^image\//.test(file.type)) {
-      window.alert("仅支持上传图片文件作为 Logo。");
+      showToast("仅支持上传图片文件作为 Logo。", "warning");
       logoUploadInput.value = "";
       reportLogoDataUrl = "";
       clearLogoBtn.disabled = true;
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      window.alert("Logo 文件过大，请控制在 5MB 以内。");
+      showToast("Logo 文件过大，请控制在 5MB 以内。", "warning");
       logoUploadInput.value = "";
       reportLogoDataUrl = "";
       clearLogoBtn.disabled = true;
@@ -1177,16 +1469,22 @@ export function initShippingPage(options) {
 
   applyConfig(currentConfig, { initial: true });
   ensureOrderDate();
+  setupRowEventDelegation();
   appendRows(12);
   setupNumberWheelGuard();
   ensureTrailingBlankRow();
   recalcAccessoryTotals();
   recalcSteelTotals();
   recalcOtherTileTotals();
-
   return {
     applyConfig: applyConfig,
     createOrderDraft: buildOrderDraft,
+    captureWorkingDraft: captureWorkingDraft,
+    restoreWorkingDraft: restoreWorkingDraft,
+    resetWorkingForm: resetWorkingForm,
+    hasWorkingDraftContent: function () {
+      return hasWorkingDraftContent(captureWorkingDraft());
+    },
     recalc: function () {
       ensureOrderDate();
       recalcAll();

@@ -29,6 +29,21 @@ function todayString() {
   return today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
 }
 
+function makeMainRows(count) {
+  return Array.from({ length: count }, function (_, index) {
+    return {
+      lengthsText: "ROW-" + String(index + 1).padStart(2, "0"),
+      totalQty: 1,
+      actual: 100 - index,
+      area: index + 1
+    };
+  });
+}
+
+function countMatches(text, pattern) {
+  return (text.match(pattern) || []).length;
+}
+
 describe("report service", function () {
   it("uses order date, customer color line and remark in the full report header", function () {
     var report = buildPreferredReport(makeSnapshot(), cloneConfig());
@@ -82,6 +97,86 @@ describe("report service", function () {
     expect(signHtml.indexOf("class='sign-signature'")).toBeGreaterThan(signHtml.indexOf("class='sign-address'"));
     expect(signHtml.indexOf("class='sign-phone'")).toBeGreaterThan(signHtml.indexOf("class='sign-signature'"));
     expect(signHtml.indexOf("class='sign-date'")).toBeGreaterThan(signHtml.indexOf("class='sign-phone'"));
+  });
+
+  it("keeps 20 main rows in the primary column without a continuation table", function () {
+    var report = buildPreferredReport(makeSnapshot({ mainRows: makeMainRows(20) }), cloneConfig());
+
+    expect(report.type).toBe("full");
+    expect(report.html).toContain("data-main-page='1'");
+    expect(report.html).not.toContain("data-main-page='2'");
+    expect(report.html).not.toContain("data-main-table='continuation'");
+    expect(countMatches(report.html, /class='main-data-row'/g)).toBe(20);
+    expect(countMatches(report.html, /主瓦总金额/g)).toBe(1);
+  });
+
+  it("keeps 21 rows, totals and the compact grand total in the first column", function () {
+    var report = buildPreferredReport(makeSnapshot({ mainRows: makeMainRows(21) }), cloneConfig());
+    var lastRowIndex = report.html.indexOf("ROW-21");
+    var grandIndex = report.html.indexOf("全单总合计");
+    var accessoryIndex = report.html.indexOf("二、配件清单");
+    var otherTileIndex = report.html.indexOf("四、其他瓦 / 特殊瓦");
+
+    expect(report.html).not.toContain("data-main-page='2'");
+    expect(report.html).not.toContain("data-main-table='continuation'");
+    expect(grandIndex).toBeGreaterThan(lastRowIndex);
+    expect(accessoryIndex).toBeGreaterThan(lastRowIndex);
+    expect(otherTileIndex).toBeGreaterThan(accessoryIndex);
+    expect(grandIndex).toBeGreaterThan(otherTileIndex);
+    expect(countMatches(report.html, /主瓦总金额/g)).toBe(1);
+    expect(countMatches(report.html, /全单总合计/g)).toBe(1);
+    expect(report.html).toContain("font-size:22px");
+  });
+
+  it("fills all 24 screenshot rows down the left column before the compact totals panel", function () {
+    var report = buildPreferredReport(makeSnapshot({ mainRows: makeMainRows(24) }), cloneConfig());
+    var totalsIndex = report.html.indexOf("data-main-table='totals'");
+    var accessoryIndex = report.html.indexOf("二、配件清单");
+    var firstColumnHtml = report.html.slice(0, totalsIndex);
+    var totalsColumnHtml = report.html.slice(totalsIndex, accessoryIndex);
+
+    expect(report.html).not.toContain("data-main-page='2'");
+    expect(report.html).not.toContain("data-main-table='continuation'");
+    expect(totalsIndex).toBeGreaterThan(-1);
+    expect(countMatches(firstColumnHtml, /class='main-data-row'/g)).toBe(24);
+    expect(firstColumnHtml).toContain("ROW-24");
+    expect(firstColumnHtml).not.toContain("全单总合计");
+    expect(countMatches(totalsColumnHtml, /class='main-data-row'/g)).toBe(0);
+    expect(totalsColumnHtml).toContain("主瓦总金额");
+    expect(report.html.indexOf("全单总合计")).toBeGreaterThan(report.html.indexOf("四、其他瓦 / 特殊瓦"));
+  });
+
+  it("uses both first-page columns for 48 rows and starts page two at row 49", function () {
+    var report48 = buildPreferredReport(makeSnapshot({ mainRows: makeMainRows(48) }), cloneConfig());
+    var report49 = buildPreferredReport(makeSnapshot({ mainRows: makeMainRows(49) }), cloneConfig());
+    var secondPageIndex = report49.html.indexOf("data-main-page='2'");
+    var firstPageHtml = report49.html.slice(0, secondPageIndex);
+
+    expect(report48.html).not.toContain("data-main-page='2'");
+    expect(countMatches(report48.html, /class='main-data-row'/g)).toBe(48);
+    expect(secondPageIndex).toBeGreaterThan(-1);
+    expect(countMatches(firstPageHtml, /class='main-data-row'/g)).toBe(48);
+    expect(report49.html.indexOf("ROW-49")).toBeGreaterThan(secondPageIndex);
+  });
+
+  it("preserves all 60 long-order rows across two pages and keeps totals and side sections last", function () {
+    var report = buildPreferredReport(makeSnapshot({ mainRows: makeMainRows(60) }), cloneConfig());
+    var secondPageIndex = report.html.indexOf("data-main-page='2'");
+    var row60Index = report.html.indexOf("ROW-60");
+    var totalIndex = report.html.indexOf("主瓦总金额");
+    var grandIndex = report.html.indexOf("全单总合计");
+    var accessoryIndex = report.html.indexOf("二、配件清单");
+    var otherTileIndex = report.html.indexOf("四、其他瓦 / 特殊瓦");
+
+    expect(countMatches(report.html, /class='main-data-row'/g)).toBe(60);
+    expect(countMatches(report.html, /data-main-page='/g)).toBe(2);
+    expect(countMatches(report.html, /主瓦总金额/g)).toBe(1);
+    expect(row60Index).toBeGreaterThan(secondPageIndex);
+    expect(totalIndex).toBeGreaterThan(row60Index);
+    expect(accessoryIndex).toBeGreaterThan(totalIndex);
+    expect(otherTileIndex).toBeGreaterThan(accessoryIndex);
+    expect(grandIndex).toBeGreaterThan(otherTileIndex);
+    expect(report.html).toContain(".full-report-page-continuation{break-before:page;page-break-before:always}");
   });
 
   it("omits blank full report optional metadata", function () {
@@ -275,7 +370,7 @@ describe("report service", function () {
     var otherTileReport = buildPreferredReport(makeSnapshot({
       mainRows: [],
       mainAmount: 0,
-      otherTiles: [{ name: "透明瓦", length: 2.5, qty: 3, unit: "片", price: 18, subtotal: 54 }]
+      otherTiles: [{ name: "透明瓦", length: 2.5, qty: 3, unit: "片", price: 18, subtotal: 135 }]
     }), cloneConfig());
 
     expect(steelReport.type).toBe("steel");
@@ -290,6 +385,10 @@ describe("report service", function () {
     expect(otherTileReport.html).toContain("ORD-PRINT-001");
     expect(otherTileReport.html).toContain("备注：补单");
     expect(otherTileReport.html).toContain("颜色：枣红色");
+    expect(otherTileReport.html).toContain("<th>片数</th>");
+    expect(otherTileReport.html).toContain("<th>单片长度</th>");
+    expect(otherTileReport.html).toContain("<th>总长度</th>");
+    expect(otherTileReport.html).toContain("<td>7.5</td>");
   });
 
   it("omits blank steel category and galvanizing process in steel-only reports", function () {
