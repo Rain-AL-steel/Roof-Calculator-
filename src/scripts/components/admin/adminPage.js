@@ -8,6 +8,7 @@ import {
 } from "../../services/configService.js";
 import { escapeHtml } from "../../utils.js";
 import { confirmAction, showToast } from "../common/feedback.js";
+import { enterElement } from "../common/motion.js";
 
 function sortBySort(items) {
   return (Array.isArray(items) ? items : []).slice().sort(function (a, b) {
@@ -138,7 +139,7 @@ var ADMIN_CATEGORIES = [
 
 function renderAdminNav(activeCategory) {
   return "<nav class='admin-category-nav' aria-label='管理分类'>" + ADMIN_CATEGORIES.map(function (item) {
-    return "<button type='button' class='admin-category-btn" + (activeCategory === item[0] ? " active" : "") + "' data-admin-category='" + item[0] + "'>" + item[1] + "</button>";
+    return "<button type='button' class='admin-category-btn" + (activeCategory === item[0] ? " active" : "") + "' data-admin-category='" + item[0] + "'" + (activeCategory === item[0] ? " aria-current='page'" : "") + ">" + item[1] + "</button>";
   }).join("") + "</nav>";
 }
 
@@ -193,6 +194,7 @@ export function initAdminPage(options) {
 
   function render() {
     root.innerHTML = renderAdmin(draft, activeCategory, isAdmin());
+    enterElement(root.querySelector("[data-admin-category-panel]:not([hidden])"));
   }
 
   function setSaveBusy(isBusy) {

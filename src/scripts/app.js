@@ -1,6 +1,8 @@
 import { initAdminPage } from "./components/admin/adminPage.js";
 import { buildConfiguredSelectOptions, computeOtherTileTotalLength, hasWorkingDraftContent, initShippingPage } from "./components/shipping/shippingPage.js";
 import { confirmAction, initFeedback, showToast } from "./components/common/feedback.js";
+import { animateNumberText, enterElement, restartMotionClass, shouldReduceMotion } from "./components/common/motion.js";
+import { getOverviewPieColor, getTileColorPieColor } from "./components/dashboard/pieColors.js";
 import {
   getCurrentAuthUser,
   getAuthUsernameDefault,
@@ -670,23 +672,17 @@ function renderTrendChart(trend, ordersByKey) {
   orderTrendChart.innerHTML =
     grid +
     "<line class='chart-axis' x1='" + bounds.left + "' y1='" + (bounds.top + bounds.height) + "' x2='" + (bounds.left + bounds.width) + "' y2='" + (bounds.top + bounds.height) + "'></line>" +
-    "<polyline class='chart-line amount' points='" + polyline(amountPoints) + "'></polyline>" +
-    "<polyline class='chart-line count' points='" + polyline(countPoints) + "'></polyline>" +
+    "<polyline class='chart-line amount' pathLength='1' points='" + polyline(amountPoints) + "'></polyline>" +
+    "<polyline class='chart-line count' pathLength='1' points='" + polyline(countPoints) + "'></polyline>" +
     dots +
     labels;
 }
 
-var PIE_FALLBACK_COLORS = ["#18745f", "#b9463e", "#4f5f9f", "#b7791f", "#64748b"];
-var TILE_COLOR_PIE_COLORS = {
-  "gray": "#7a858d",
-  "jujube-red": "#8f1d3a",
-  "brick-red": "#c65a3a",
-  "unknown-color": "#64748b"
-};
+var PIE_FALLBACK_COLORS = ["#191714", "#c5a45d", "#e3d2a6", "#8c6a2f", "#716d64"];
 var TILE_BRAND_PIE_COLORS = {
-  "\u7ea2\u6ce2": "#18745f",
-  "\u661f\u5927": "#4f5f9f",
-  "\u672a\u533a\u5206": "#64748b"
+  "\u7ea2\u6ce2": "#c5a45d",
+  "\u661f\u5927": "#191714",
+  "\u672a\u533a\u5206": "#9a927f"
 };
 
 function normalizePieColorLabel(label) {
@@ -696,11 +692,11 @@ function normalizePieColorLabel(label) {
 function getPieSliceColor(slice, index) {
   if (activeTrendPieMode === "tile") {
     if (activeTrendTilePieView === "color") {
-      return TILE_COLOR_PIE_COLORS[slice && slice.key] || TILE_COLOR_PIE_COLORS["unknown-color"];
+      return getTileColorPieColor(slice && slice.key);
     }
     return TILE_BRAND_PIE_COLORS[normalizePieColorLabel(slice && slice.label)] || PIE_FALLBACK_COLORS[index % PIE_FALLBACK_COLORS.length];
   }
-  return PIE_FALLBACK_COLORS[index % PIE_FALLBACK_COLORS.length];
+  return getOverviewPieColor(slice && slice.key, index);
 }
 
 function renderPieSvg(data) {
@@ -813,6 +809,10 @@ function renderTrend(orders) {
   renderTrendPointDetail(activeTrendPointKey);
   setEmptyNote(trendEmpty, !hasData);
   orderTrendChart.classList.toggle("is-muted", !hasData);
+  if (hasData) {
+    restartMotionClass(orderTrendChart, "motion-chart", 380);
+    restartMotionClass(orderPieChart, "motion-chart", 380);
+  }
 }
 
 function activateTrendChartPoint(key) {
@@ -1633,6 +1633,7 @@ function renderAuthGate() {
   var setupMode = !hasAuthSetup();
   var showUsername = !setupMode && isApiAuthConfigured();
   authView.hidden = false;
+  enterElement(authView);
   workspaceHeader.hidden = true;
   adminView.hidden = true;
   businessViews.forEach(function (view) { view.hidden = true; });
@@ -1700,8 +1701,9 @@ function showView(viewId) {
     workspaceHeader.hidden = true;
     businessViews.forEach(function (view) { view.hidden = true; });
     adminView.hidden = false;
+    enterElement(adminView);
     adminPage.refreshFromConfig(currentConfig);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: shouldReduceMotion() ? "auto" : "smooth" });
     return;
   }
 
@@ -1710,9 +1712,13 @@ function showView(viewId) {
   adminView.hidden = true;
   businessViews.forEach(function (view) {
     view.hidden = view.id !== viewId;
+    if (view.id === viewId) enterElement(view);
   });
   appViewButtons.forEach(function (button) {
-    button.classList.toggle("active", button.getAttribute("data-app-view") === viewId);
+    var active = button.getAttribute("data-app-view") === viewId;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   });
   if (viewId === "dashboardView") {
     renderDashboard();
@@ -1720,7 +1726,7 @@ function showView(viewId) {
   }
   if (viewId === "shippingView") shippingPage.recalc();
   if (viewId === "historyView") renderHistory();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: shouldReduceMotion() ? "auto" : "smooth" });
 }
 
 function renderDashboard() {
@@ -1730,12 +1736,12 @@ function renderDashboard() {
   if (dashboardMonthInput) dashboardMonthInput.value = activeDashboardMonth;
   var stats = getOrderStats(orders, getDateOnly(new Date()));
   dashboardDateTitle.textContent = activeDashboardMonth + " 订单";
-  todayOrderCount.textContent = String(monthStats.count);
-  todayOrderAmount.textContent = formatMoney(monthStats.amount);
-  todayOrderArea.textContent = formatArea(monthStats.area);
-  totalOrderCount.textContent = String(stats.totalCount);
-  totalOrderAmount.textContent = formatMoney(stats.totalAmount);
-  totalOrderArea.textContent = formatArea(stats.totalArea);
+  animateNumberText(todayOrderCount, monthStats.count, function (value) { return String(Math.round(value)); }, { duration: 340, startFrom: 0 });
+  animateNumberText(todayOrderAmount, monthStats.amount, formatMoney, { duration: 360, startFrom: 0 });
+  animateNumberText(todayOrderArea, monthStats.area, formatArea, { duration: 360, startFrom: 0 });
+  animateNumberText(totalOrderCount, stats.totalCount, function (value) { return String(Math.round(value)); }, { duration: 340, startFrom: 0 });
+  animateNumberText(totalOrderAmount, stats.totalAmount, formatMoney, { duration: 360, startFrom: 0 });
+  animateNumberText(totalOrderArea, stats.totalArea, formatArea, { duration: 360, startFrom: 0 });
   renderTrend(orders);
   renderOrderMap(orders);
 }
@@ -1972,6 +1978,7 @@ function deleteRecordMapImage(orderId) {
 
 function renderRecordDetail(order, mode) {
   recordDetail.hidden = false;
+  enterElement(recordDetail);
   recordDetailTitle.textContent = mode === "edit" ? "编辑订单" : "订单详情";
   recordDetailSubtitle.textContent = getOrderCustomer(order) + " · " + order.orderDate;
 

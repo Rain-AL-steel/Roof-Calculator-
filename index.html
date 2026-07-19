@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="ERP计算器" />
   <meta name="description" content="树脂瓦、配件、钢铁材料和其他瓦的静态出货计算与打印工具。" />
-  <meta name="theme-color" content="#176b57" />
+  <meta name="theme-color" content="#f7f5ef" />
   <title>红波企业 ERP</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23176b57'/%3E%3Cpath d='M14 31 32 16l18 15v19H14V31Z' fill='none' stroke='white' stroke-width='5' stroke-linejoin='round'/%3E%3Cpath d='M24 50V35h16v15' fill='none' stroke='white' stroke-width='5'/%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191714'/%3E%3Cpath d='M14 31 32 16l18 15v19H14V31Z' fill='none' stroke='%23c5a45d' stroke-width='5' stroke-linejoin='round'/%3E%3Cpath d='M24 50V35h16v15' fill='none' stroke='%23c5a45d' stroke-width='5'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./src/styles/main.css" />
 </head>
 <body>
@@ -123,44 +123,57 @@
   <a class="skip-link" href="#content">跳到内容</a>
   <div class="app-shell">
     <section id="authView" class="auth-view" hidden>
-      <div class="auth-card">
-        <p class="eyebrow">本地登录</p>
-        <h1 id="authTitle">登录系统</h1>
-        <p id="authSubtitle">请输入本机密码后继续使用。</p>
-        <form id="authForm" class="auth-form">
-          <div class="field" id="authUsernameField">
-            <label for="authUsername">账号</label>
-            <input id="authUsername" type="text" autocomplete="username" />
-          </div>
-          <div class="field">
-            <label for="authPassword">密码</label>
-            <div class="password-field">
-              <input id="authPassword" type="password" autocomplete="current-password" />
-              <button type="button" class="password-toggle" id="authPasswordToggle" aria-label="显示密码" aria-pressed="false" title="显示密码">
-                <svg class="ui-icon" aria-hidden="true"><use id="authPasswordToggleIcon" href="#icon-eye"></use></svg>
-              </button>
+      <div class="auth-brand-panel" aria-label="红波订单工作台">
+        <img class="auth-brand-logo" src="./src/assets/brand/hongbo-logo-full.png" alt="红波 泉州销售中心" />
+        <div class="auth-brand-copy">
+          <p class="auth-brand-kicker">ROOF MATERIAL · ERP</p>
+          <h2>从材料核算到出货复核，都在一张工作台完成。</h2>
+          <p>面向树脂瓦、配件与钢铁材料的订单录入、统计和打印。</p>
+        </div>
+        <div class="auth-spec-grid" aria-hidden="true">
+          <span>主瓦核算</span><span>配件清单</span><span>钢材台账</span><span>订单统计</span>
+        </div>
+      </div>
+      <div class="auth-access-panel">
+        <div class="auth-card">
+          <p class="eyebrow">安全访问 · SECURE ACCESS</p>
+          <h1 id="authTitle">登录系统</h1>
+          <p id="authSubtitle">请输入本机密码后继续使用。</p>
+          <form id="authForm" class="auth-form">
+            <div class="field" id="authUsernameField">
+              <label for="authUsername">账号</label>
+              <input id="authUsername" type="text" autocomplete="username" />
             </div>
-          </div>
-          <div class="field" id="authConfirmField" hidden>
-            <label for="authConfirmPassword">确认密码</label>
-            <input id="authConfirmPassword" type="password" autocomplete="new-password" />
-          </div>
-          <p class="auth-status" id="authStatus" role="alert"></p>
-          <button type="submit" class="btn btn-primary" id="authSubmit"><svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg><span>进入系统</span></button>
-        </form>
+            <div class="field">
+              <label for="authPassword">密码</label>
+              <div class="password-field">
+                <input id="authPassword" type="password" autocomplete="current-password" />
+                <button type="button" class="password-toggle" id="authPasswordToggle" aria-label="显示密码" aria-pressed="false" title="显示密码">
+                  <svg class="ui-icon" aria-hidden="true"><use id="authPasswordToggleIcon" href="#icon-eye"></use></svg>
+                </button>
+              </div>
+            </div>
+            <div class="field" id="authConfirmField" hidden>
+              <label for="authConfirmPassword">确认密码</label>
+              <input id="authConfirmPassword" type="password" autocomplete="new-password" />
+            </div>
+            <p class="auth-status" id="authStatus" role="alert"></p>
+            <button type="submit" class="btn btn-primary" id="authSubmit"><svg class="ui-icon" aria-hidden="true"><use href="#icon-save"></use></svg><span>进入系统</span></button>
+          </form>
+        </div>
       </div>
     </section>
 
     <header class="workspace-header" id="workspaceHeader" hidden>
       <div class="workspace-bar">
         <div class="brand-block">
-          <div class="brand-mark" aria-hidden="true"><svg class="ui-icon"><use href="#icon-layers"></use></svg></div>
-          <div class="brand-copy"><strong>红波计算机</strong><span>企业订单工作台</span></div>
+          <div class="brand-mark"><img src="./src/assets/brand/hongbo-logo-header.png" alt="红波" /></div>
+          <div class="brand-copy"><strong>材料订单工作台</strong><span>泉州销售中心 · ERP</span></div>
         </div>
         <nav class="workspace-tabs" aria-label="业务模块">
-          <button type="button" class="workspace-tab active" data-app-view="dashboardView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg><span>经营首页</span></button>
-          <button type="button" class="workspace-tab" data-app-view="shippingView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>新建订单</span></button>
-          <button type="button" class="workspace-tab" data-app-view="historyView"><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg><span>订单记录</span></button>
+          <button type="button" class="workspace-tab active" data-app-view="dashboardView"><span class="workspace-tab-index">01</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg><span>经营首页</span></button>
+          <button type="button" class="workspace-tab" data-app-view="shippingView"><span class="workspace-tab-index">02</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>新建订单</span></button>
+          <button type="button" class="workspace-tab" data-app-view="historyView"><span class="workspace-tab-index">03</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg><span>订单记录</span></button>
         </nav>
         <div class="workspace-controls">
           <button type="button" class="sync-status" id="syncStatusButton" aria-label="查看同步状态" title="查看同步状态"><span class="sync-status-dot" aria-hidden="true"></span><span><strong id="syncStatusText">正在检查</strong><small id="syncStatusMeta">—</small></span></button>
@@ -188,21 +201,21 @@
             </div>
           </div>
           <div class="metric-grid">
-            <div class="metric-card">
-              <span>本月订单数</span>
-              <strong id="todayOrderCount">0</strong>
+            <div class="metric-card metric-card-primary">
+              <span>本月订单金额</span>
+              <strong id="todayOrderAmount" data-unit="元">0.00</strong>
             </div>
             <div class="metric-card">
-              <span>本月订单金额</span>
-              <strong id="todayOrderAmount">0.00</strong>
+              <span>本月订单数</span>
+              <strong id="todayOrderCount" data-unit="单">0</strong>
             </div>
             <div class="metric-card">
               <span>本月总面积</span>
-              <strong id="todayOrderArea">0.0000</strong>
+              <strong id="todayOrderArea" data-unit="㎡">0.0000</strong>
             </div>
             <div class="metric-card">
               <span>历史订单数</span>
-              <strong id="totalOrderCount">0</strong>
+              <strong id="totalOrderCount" data-unit="单">0</strong>
             </div>
           </div>
           <div class="dashboard-lifetime">
@@ -317,6 +330,7 @@
     <header class="app-header">
       <div class="title-row">
         <div class="title-block">
+          <p class="eyebrow">MATERIAL ORDER · 录单工作台</p>
           <h1>订单基础信息</h1>
           <p>主瓦、配件、钢铁材料和特殊瓦统一核算</p>
         </div>
@@ -377,10 +391,10 @@
 
     <div class="actions-row">
       <nav class="tabbar" aria-label="出货模块">
-        <button type="button" class="nav-tab active" data-target="mainPanel"><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>主瓦计算</span></button>
-        <button type="button" class="nav-tab" data-target="accessoryPanel"><svg class="ui-icon" aria-hidden="true"><use href="#icon-parts"></use></svg><span>配件清单</span></button>
-        <button type="button" class="nav-tab" data-target="steelPanel"><svg class="ui-icon" aria-hidden="true"><use href="#icon-steel"></use></svg><span>钢铁材料</span></button>
-        <button type="button" class="nav-tab" data-target="otherTilePanel"><svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg><span>其他瓦</span></button>
+        <button type="button" class="nav-tab active" data-target="mainPanel"><span class="nav-tab-index">01</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>主瓦计算</span></button>
+        <button type="button" class="nav-tab" data-target="accessoryPanel"><span class="nav-tab-index">02</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-parts"></use></svg><span>配件清单</span></button>
+        <button type="button" class="nav-tab" data-target="steelPanel"><span class="nav-tab-index">03</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-steel"></use></svg><span>钢铁材料</span></button>
+        <button type="button" class="nav-tab" data-target="otherTilePanel"><span class="nav-tab-index">04</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg><span>其他瓦</span></button>
       </nav>
     </div>
 
@@ -494,7 +508,7 @@
       </main>
 
       <aside class="summary-panel" aria-label="出货汇总">
-        <h2>出货汇总</h2>
+        <div class="summary-heading"><span>ORDER TOTAL</span><h2>出货汇总</h2></div>
         <div class="summary-lines">
           <div class="summary-line">
             <span>总面积（㎡）</span>
@@ -542,6 +556,7 @@
       <header class="app-header">
         <div class="title-row">
           <div class="title-block">
+            <p class="eyebrow">ORDER LEDGER · 订单台账</p>
             <h1>订单详细</h1>
             <p>按日期、客户名称或位置查找订单。</p>
           </div>
@@ -634,6 +649,7 @@
       <header class="app-header admin-page-header">
         <div class="title-row">
           <div class="title-block">
+            <p class="eyebrow">SYSTEM CONTROL · 参数中心</p>
             <h1>系统管理</h1>
             <p>维护出货单参数、预设清单和打印报表模板</p>
           </div>

@@ -13,6 +13,7 @@ import { buildCuttingPlans, formatCuttingPlan } from "../../services/cuttingPlan
 import { buildPreferredReport } from "../../services/reportService.js";
 import { escapeHtml, formatMoney, formatNum, formatTrimFixed, parseNum } from "../../utils.js";
 import { showToast } from "../common/feedback.js";
+import { enterElement, leaveAndRemove, shouldReduceMotion, updateTextWithPulse } from "../common/motion.js";
 
 function sortBySort(items) {
   return (Array.isArray(items) ? items : []).slice().sort(function (a, b) {
@@ -177,6 +178,12 @@ export function initShippingPage(options) {
     return '<svg class="ui-icon" aria-hidden="true"><use href="#icon-' + name + '"></use></svg>';
   }
 
+  function appendAnimatedRow(container, row) {
+    container.appendChild(row);
+    enterElement(row, "motion-row-enter");
+    return row;
+  }
+
   function getConfiguredUnit(preferredUnit) {
     var units = getEnabledItems(currentConfig.unitOptions).map(getOptionValue);
     if (preferredUnit && units.indexOf(preferredUnit) !== -1) return preferredUnit;
@@ -255,21 +262,21 @@ export function initShippingPage(options) {
 
     getEnabledItems(currentConfig.accessories).forEach(function (item) {
       addPresetButton(getDisplayName(item), item.common ? accPresetGrid : accPresetGridUncommon, function () {
-        accessoryRowsEl.appendChild(createAccessoryRow(item, true));
+        appendAnimatedRow(accessoryRowsEl, createAccessoryRow(item, true));
         recalcAccessoryTotals();
       });
     });
 
     getEnabledItems(currentConfig.steel.materials).forEach(function (item) {
       addPresetButton(getDisplayName(item), steelPresetGrid, function () {
-        steelRowsEl.appendChild(createSteelRow(item));
+        appendAnimatedRow(steelRowsEl, createSteelRow(item));
         recalcSteelTotals();
       });
     });
 
     getEnabledItems(currentConfig.otherTiles).forEach(function (item) {
       addPresetButton(getDisplayName(item), otherTilePresetGrid, function () {
-        otherTileRowsEl.appendChild(createOtherTileRow(item));
+        appendAnimatedRow(otherTileRowsEl, createOtherTileRow(item));
         recalcOtherTileTotals();
       });
     });
@@ -383,7 +390,7 @@ export function initShippingPage(options) {
   function ensureTrailingBlankRow() {
     var rows = Array.prototype.slice.call(rowsEl.querySelectorAll(".calc-row"));
     if (!rows.length || !isMainRowBlank(rows[rows.length - 1])) {
-      rowsEl.appendChild(createMainRow());
+      appendAnimatedRow(rowsEl, createMainRow());
       renumberRows();
     }
   }
@@ -415,8 +422,8 @@ export function initShippingPage(options) {
     });
     totals.area = sumArea;
     totals.main = getMainAmount(sumArea);
-    totalAreaEl.textContent = formatNum(totals.area, 4);
-    mainAmountEl.textContent = formatMoney(totals.main);
+    updateTextWithPulse(totalAreaEl, formatNum(totals.area, 4));
+    updateTextWithPulse(mainAmountEl, formatMoney(totals.main));
     recalcGrandTotal();
   }
 
@@ -494,8 +501,8 @@ export function initShippingPage(options) {
       if (Number.isFinite(subtotal)) total += subtotal;
     });
     totals.accessories = total;
-    accAmountEl.textContent = formatMoney(total);
-    accAmountInlineEl.textContent = formatMoney(total);
+    updateTextWithPulse(accAmountEl, formatMoney(total));
+    updateTextWithPulse(accAmountInlineEl, formatMoney(total));
     recalcGrandTotal();
   }
 
@@ -542,8 +549,8 @@ export function initShippingPage(options) {
       if (Number.isFinite(subtotal)) total += subtotal;
     });
     totals.steel = total;
-    steelAmountEl.textContent = formatMoney(total);
-    steelAmountFooterEl.textContent = formatMoney(total);
+    updateTextWithPulse(steelAmountEl, formatMoney(total));
+    updateTextWithPulse(steelAmountFooterEl, formatMoney(total));
     recalcGrandTotal();
   }
 
@@ -592,22 +599,26 @@ export function initShippingPage(options) {
       if (Number.isFinite(subtotal)) total += subtotal;
     });
     totals.otherTiles = total;
-    otherTileAmountEl.textContent = formatMoney(total);
-    otherTileAmountFooterEl.textContent = formatMoney(total);
+    updateTextWithPulse(otherTileAmountEl, formatMoney(total));
+    updateTextWithPulse(otherTileAmountFooterEl, formatMoney(total));
     recalcGrandTotal();
   }
 
   function recalcGrandTotal() {
     totals.grand = computeGrandAmount(totals.main, totals.accessories, totals.steel, totals.otherTiles);
-    grandAmountEl.textContent = formatMoney(totals.grand);
+    updateTextWithPulse(grandAmountEl, formatMoney(totals.grand));
   }
 
   function switchPanel(targetId) {
     navTabs.forEach(function (button) {
-      button.classList.toggle("active", button.getAttribute("data-target") === targetId);
+      var active = button.getAttribute("data-target") === targetId;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
     });
     panels.forEach(function (panel) {
-      panel.classList.toggle("active", panel.id === targetId);
+      var active = panel.id === targetId;
+      panel.classList.toggle("active", active);
+      if (active) enterElement(panel);
     });
   }
 
@@ -1329,13 +1340,13 @@ export function initShippingPage(options) {
     var spec = steelTubeSpecSelect.value;
     var thickness = steelTubeThicknessSelect.value;
     var name = String(currentConfig.steel.tubeMaterialName || "方管") + " " + spec + " 厚 " + thickness;
-    steelRowsEl.appendChild(createSteelRow(name, currentConfig.steel.tubeDefaultUnit || "支"));
+    appendAnimatedRow(steelRowsEl, createSteelRow(name, currentConfig.steel.tubeDefaultUnit || "支"));
     recalcSteelTotals();
   }
 
   function addExpansionBolt() {
     var name = String(currentConfig.steel.boltMaterialName || "螺丝") + " " + steelBoltSpecSelect.value;
-    steelRowsEl.appendChild(createSteelRow(name, currentConfig.steel.boltDefaultUnit || "盒"));
+    appendAnimatedRow(steelRowsEl, createSteelRow(name, currentConfig.steel.boltDefaultUnit || "盒"));
     recalcSteelTotals();
   }
 
@@ -1372,10 +1383,12 @@ export function initShippingPage(options) {
       var button = event.target && event.target.closest ? event.target.closest(".btn-del") : null;
       if (!button) return;
       var row = button.closest(".calc-row");
-      if (row) row.remove();
-      ensureTrailingBlankRow();
-      renumberRows();
-      recalcAll();
+      if (row) leaveAndRemove(row, function () {
+        row.remove();
+        ensureTrailingBlankRow();
+        renumberRows();
+        recalcAll();
+      });
     });
 
     [
@@ -1388,8 +1401,10 @@ export function initShippingPage(options) {
         var button = event.target && event.target.closest ? event.target.closest(binding.remove) : null;
         if (!button) return;
         var row = button.closest(binding.row);
-        if (row) row.remove();
-        binding.recalc();
+        if (row) leaveAndRemove(row, function () {
+          row.remove();
+          binding.recalc();
+        });
       });
     });
   }
@@ -1403,13 +1418,13 @@ export function initShippingPage(options) {
   setupCuttingAdviceUi();
 
   addMainRowBtn.addEventListener("click", function () {
-    rowsEl.appendChild(createMainRow());
+    appendAnimatedRow(rowsEl, createMainRow());
     renumberRows();
-    rowsEl.lastElementChild.scrollIntoView({ behavior: "smooth", block: "center" });
+    rowsEl.lastElementChild.scrollIntoView({ behavior: shouldReduceMotion() ? "auto" : "smooth", block: "center" });
   });
 
   addAccessoryRowBottomBtn.addEventListener("click", function () {
-    accessoryRowsEl.appendChild(createAccessoryRow("", false));
+    appendAnimatedRow(accessoryRowsEl, createAccessoryRow("", false));
     recalcAccessoryTotals();
   });
 
@@ -1424,7 +1439,7 @@ export function initShippingPage(options) {
   steelAddBoltBtn.addEventListener("click", addExpansionBolt);
 
   addOtherTileRowBtn.addEventListener("click", function () {
-    otherTileRowsEl.appendChild(createOtherTileRow(""));
+    appendAnimatedRow(otherTileRowsEl, createOtherTileRow(""));
     recalcOtherTileTotals();
   });
 

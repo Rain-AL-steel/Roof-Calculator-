@@ -11,36 +11,36 @@ export default {
     },
     extend: {
       colors: {
-        "app-bg": "#f4f6f5",
-        "app-surface": "#ffffff",
+        "app-bg": "#f7f5ef",
+        "app-surface": "#fcfbf8",
         "app-surface-raised": "#ffffff",
-        "app-surface-soft": "#eef2f0",
-        "app-line": "#d9e1de",
-        "app-line-strong": "#c5d0cc",
-        "app-text": "#17211e",
-        "app-muted": "#66736f",
-        "app-primary": "#176b57",
-        "app-primary-dark": "#115645",
-        "app-primary-soft": "#e3f0eb",
-        "app-accent": "#176b57",
-        "app-danger": "#b5473e",
-        "app-danger-soft": "#fbeceb"
+        "app-surface-soft": "#f0ece3",
+        "app-line": "#ddd7c9",
+        "app-line-strong": "#c9bea9",
+        "app-text": "#171613",
+        "app-muted": "#716d64",
+        "app-primary": "#191714",
+        "app-primary-dark": "#0f0e0c",
+        "app-primary-soft": "#f3ead5",
+        "app-accent": "#c5a45d",
+        "app-danger": "#2c2924",
+        "app-danger-soft": "#f2ead8"
       },
       borderRadius: {
-        app: "8px",
-        "app-lg": "18px",
-        "app-xl": "26px"
+        app: "2px",
+        "app-lg": "6px",
+        "app-xl": "12px"
       },
       boxShadow: {
-        app: "0 18px 42px -34px rgba(23, 33, 30, 0.42), 0 1px 2px rgba(23, 33, 30, 0.06)",
-        "app-soft": "0 12px 28px -24px rgba(23, 33, 30, 0.3), 0 1px 2px rgba(23, 33, 30, 0.05)"
+        app: "0 18px 42px -34px rgba(33, 29, 22, 0.34), 0 1px 2px rgba(33, 29, 22, 0.06)",
+        "app-soft": "0 12px 28px -24px rgba(33, 29, 22, 0.24), 0 1px 2px rgba(33, 29, 22, 0.05)"
       },
       transitionTimingFunction: {
         "app-out": "cubic-bezier(0.16, 1, 0.3, 1)"
       },
       fontFamily: {
-        sans: ["Geist", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "Geist Mono", "SFMono-Regular", "Consolas", "monospace"]
+        sans: ["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable", "Segoe UI", "Noto Sans SC", "system-ui", "sans-serif"],
+        mono: ["Bahnschrift", "JetBrains Mono", "SFMono-Regular", "Consolas", "monospace"]
       },
       keyframes: {
         panelIn: {
