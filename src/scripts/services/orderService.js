@@ -7,6 +7,8 @@ export const PENDING_ORDER_MUTATIONS_STORAGE_KEY = "erp_pending_order_mutations_
 export const ORDER_SYNC_STATE_EVENT = "erp-sync-state-change";
 export const EXPORT_APP_NAME = "resin-tile-order-tool";
 export const EXPORT_VERSION = 2;
+const ORDER_API_PAGE_SIZE = 100;
+const ORDER_API_MAX_PAGES = 10000;
 
 function getStorage() {
   try {
@@ -327,6 +329,15 @@ export function generateOrderNo(date) {
     String(source.getSeconds()).padStart(2, "0");
 }
 
+function normalizeOrderOperator(value) {
+  if (!value || typeof value !== "object") return null;
+  var id = compactText(value.id);
+  var username = compactText(value.username);
+  var displayName = compactText(value.displayName);
+  if (!id && !username && !displayName) return null;
+  return { id: id, username: username, displayName: displayName };
+}
+
 export function normalizeOrder(input) {
   var source = input || {};
   var now = nowIso();
@@ -361,6 +372,8 @@ export function normalizeOrder(input) {
     clientOrderId: compactText(source.clientOrderId),
     createdAt: compactText(source.createdAt) || now,
     updatedAt: compactText(source.updatedAt) || now,
+    createdBy: normalizeOrderOperator(source.createdBy),
+    updatedBy: normalizeOrderOperator(source.updatedBy),
     orderDate: orderDate,
     customerName: compactText(source.customerName),
     tileColor: compactText(source.tileColor),
@@ -461,6 +474,46 @@ function readOrdersPayload(payload) {
   return null;
 }
 
+function readOrdersPagination(payload) {
+  var source = payload && payload.pagination;
+  if (!source || typeof source !== "object") return null;
+  var page = Number(source.page);
+  var totalPages = Number(source.totalPages);
+  var total = Number(source.total);
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(totalPages) || totalPages < 1 || !Number.isFinite(total) || total < 0) return null;
+  return { page: page, totalPages: totalPages, total: total };
+}
+
+function fetchAllOrdersFromApi() {
+  var collected = [];
+  var seen = {};
+
+  function fetchPage(page) {
+    if (page > ORDER_API_MAX_PAGES) {
+      throw new Error("Order pagination exceeded the supported page limit.");
+    }
+    return fetchOrdersFromApi({ page: page, pageSize: ORDER_API_PAGE_SIZE }).then(function (payload) {
+      var orders = readOrdersPayload(payload);
+      if (!orders) throw new Error("API orders payload is invalid.");
+      orders.forEach(function (order) {
+        var key = compactText(order && (order.id || order.clientOrderId || order.orderNo));
+        if (key && seen[key]) return;
+        if (key) seen[key] = true;
+        collected.push(order);
+      });
+
+      var pagination = readOrdersPagination(payload);
+      if (!pagination) return collected;
+      if (pagination.page !== page) throw new Error("API returned an unexpected order page.");
+      if (page >= pagination.totalPages) return collected;
+      if (!orders.length) throw new Error("API returned an empty order page before pagination completed.");
+      return fetchPage(page + 1);
+    });
+  }
+
+  return fetchPage(1);
+}
+
 function readOrderPayload(payload, fallback) {
   if (payload && payload.order) return payload.order;
   if (payload && typeof payload === "object" && (payload.id || payload.orderNo || payload.items || payload.totals)) return payload;
@@ -551,9 +604,7 @@ function mergeServerOrdersWithPending(serverOrders) {
 }
 
 function fetchServerOrders(metaPatch) {
-  return fetchOrdersFromApi().then(function (payload) {
-    var apiOrders = readOrdersPayload(payload);
-    if (!apiOrders) throw new Error("API orders payload is invalid.");
+  return fetchAllOrdersFromApi().then(function (apiOrders) {
     var serverOrders = apiOrders.map(normalizeOrder);
     var merged = mergeServerOrdersWithPending(serverOrders);
     saveOrdersToLocal(merged, Object.assign({ lastSyncedAt: nowIso(), lastSyncError: "" }, metaPatch || {}));
@@ -689,6 +740,7 @@ export function upsertOrderWithApiFallback(order) {
     markSyncSuccess();
     return createPersistenceResult(savedOrder, "server", "");
   }).catch(function (error) {
+    if (!isRetryableOrderApiError(error)) throw error;
     console.warn("订单 API 保存失败，已加入本地待同步队列。", error);
     var localOrder = upsertOrderToLocal(localCandidate, { touchUpdatedAt: false });
     queuePendingOrderMutation("create", localOrder, localOrder.id, error);
@@ -748,6 +800,7 @@ export function updateOrderWithApiFallback(orderId, order) {
       markSyncSuccess();
       return createPersistenceResult(savedOrder, "server", "");
     }).catch(function (error) {
+      if (!isRetryableOrderApiError(error)) throw error;
       console.warn("Order API update failed; queued for synchronization.", {
         orderId: reference.orderId,
         requestedId: requestedId,
@@ -758,6 +811,7 @@ export function updateOrderWithApiFallback(orderId, order) {
       return createPersistenceResult(localOrder, "local-pending", "服务器暂不可用，修改已保存在本机并等待同步。");
     });
   }).catch(function (error) {
+    if (!isRetryableOrderApiError(error)) throw error;
     console.warn("Order API id resolution failed; queued for synchronization.", {
       orderId: requestedId,
       reason: getErrorReason(error)
@@ -782,9 +836,7 @@ function syncPendingMutation(mutation) {
   if (mutation.type === "create") {
     return saveOrderToApi(pendingOrder);
   }
-  return fetchOrdersFromApi().then(function (payload) {
-    var serverOrders = readOrdersPayload(payload);
-    if (!serverOrders) throw new Error("API orders payload is invalid.");
+  return fetchAllOrdersFromApi().then(function (serverOrders) {
     var match = getPendingMutationServerMatch(serverOrders.map(normalizeOrder), mutation);
     if (!match) return saveOrderToApi(pendingOrder);
     return updateOrderToApi(match.id, Object.assign({}, pendingOrder, {
@@ -873,6 +925,11 @@ export function deleteOrderWithApiFallback(orderId, orderHint) {
 
 function getErrorReason(error) {
   return error && error.message ? error.message : String(error || "Unknown error");
+}
+
+function isRetryableOrderApiError(error) {
+  var status = Number(error && error.status);
+  return !Number.isFinite(status) || status !== 400;
 }
 
 function getUniqueOrderIds(orders) {

@@ -89,6 +89,10 @@ function createDbOrder(data, previous) {
     steelAmount: data.steelAmount !== undefined ? data.steelAmount : prior.steelAmount,
     otherTileAmount: data.otherTileAmount !== undefined ? data.otherTileAmount : prior.otherTileAmount,
     grandAmount: data.grandAmount !== undefined ? data.grandAmount : prior.grandAmount,
+    createdById: data.createdById !== undefined ? data.createdById : (prior.createdById || null),
+    updatedById: data.updatedById !== undefined ? data.updatedById : (prior.updatedById || null),
+    createdBy: data.createdBy !== undefined ? data.createdBy : (prior.createdBy || null),
+    updatedBy: data.updatedBy !== undefined ? data.updatedBy : (prior.updatedBy || null),
     mapLocationCache: null,
     mainRows: readNestedCreates(data.mainRows, prior.mainRows),
     lineItems: readNestedCreates(data.lineItems, prior.lineItems)
@@ -106,8 +110,15 @@ function createMockPrisma() {
   var mapImagesByOrderId = {};
   var systemConfigsByKey = {};
   var usersByUsername = {};
+  var auditLogs = [];
+
+  function findUserById(userId) {
+    return Object.values(usersByUsername).find(function (user) { return user.id === userId; }) || null;
+  }
 
   function storeOrder(order) {
+    if (order.createdById) order.createdBy = findUserById(order.createdById);
+    if (order.updatedById) order.updatedBy = findUserById(order.updatedById);
     ordersById[order.id] = order;
     if (order.clientOrderId) ordersByClientOrderId[order.clientOrderId] = order;
     return order;
@@ -217,6 +228,21 @@ function createMockPrisma() {
         captured.mapLocationUpsertCalls += 1;
         return { id: "map-location-1" };
       }
+    },
+    auditLog: {
+      create: async function (args) {
+        recordMockPrismaQuery();
+        var log = Object.assign({
+          id: "audit-" + String(auditLogs.length + 1),
+          createdAt: new Date(2026, 4, 30, 0, 0, auditLogs.length),
+          updatedAt: new Date(2026, 4, 30, 0, 0, auditLogs.length)
+        }, args.data);
+        log.actorUser = findUserById(log.actorUserId);
+        auditLogs.push(log);
+        captured.auditLogCreateArgs = captured.auditLogCreateArgs || [];
+        captured.auditLogCreateArgs.push(args);
+        return log;
+      }
     }
   };
 
@@ -227,6 +253,7 @@ function createMockPrisma() {
     mapImagesByOrderId: mapImagesByOrderId,
     systemConfigsByKey: systemConfigsByKey,
     usersByUsername: usersByUsername,
+    auditLogs: auditLogs,
     storeOrder: storeOrder,
     storeUser: storeUser,
     storeMapImage: storeMapImage,
@@ -256,9 +283,21 @@ function createMockPrisma() {
           captured.rootFindUniqueArgs.push(args);
           return findOrder(args);
         },
-        findMany: async function () {
+        findMany: async function (args) {
           recordMockPrismaQuery();
-          return Object.values(ordersById);
+          captured.rootFindManyArgs = captured.rootFindManyArgs || [];
+          captured.rootFindManyArgs.push(args || {});
+          var orders = Object.values(ordersById).sort(function (a, b) {
+            var timeDiff = new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+            return timeDiff || String(b.id).localeCompare(String(a.id));
+          });
+          if (!args || args.take === undefined) return orders;
+          return orders.slice(args.skip || 0, (args.skip || 0) + args.take);
+        },
+        count: async function () {
+          recordMockPrismaQuery();
+          captured.rootOrderCountCalls = Number(captured.rootOrderCountCalls || 0) + 1;
+          return Object.keys(ordersById).length;
         },
         update: async function (args) {
           recordMockPrismaQuery();
@@ -329,6 +368,27 @@ function createMockPrisma() {
           return { value: data.value };
         }
       },
+      auditLog: {
+        create: tx.auditLog.create,
+        findMany: async function (args) {
+          recordMockPrismaQuery();
+          captured.auditLogFindManyArgs = args;
+          var where = args.where || {};
+          var filtered = auditLogs.filter(function (log) {
+            return (!where.action || log.action === where.action) && (!where.entityType || log.entityType === where.entityType);
+          }).sort(function (a, b) { return b.createdAt - a.createdAt; });
+          return filtered.slice(args.skip || 0, (args.skip || 0) + (args.take || filtered.length)).map(function (log) {
+            return Object.assign({}, log, { actorUser: findUserById(log.actorUserId) });
+          });
+        },
+        count: async function (args) {
+          recordMockPrismaQuery();
+          var where = args.where || {};
+          return auditLogs.filter(function (log) {
+            return (!where.action || log.action === where.action) && (!where.entityType || log.entityType === where.entityType);
+          }).length;
+        }
+      },
       $queryRaw: async function () {
         recordMockPrismaQuery();
         captured.queryRawCalls = (captured.queryRawCalls || 0) + 1;
@@ -363,7 +423,7 @@ function createFrontendPayload() {
           area: 0
         }
       ],
-      accessories: [],
+      accessories: [{ name: "正脊瓦", qty: 2, unit: "件", price: 12.5, subtotal: 25 }],
       steels: [],
       otherTiles: []
     },
@@ -373,10 +433,10 @@ function createFrontendPayload() {
     totals: {
       areaTotal: 0,
       mainAmount: 0,
-      accessoryAmount: 0,
+      accessoryAmount: 25,
       steelAmount: 0,
       otherTileAmount: 0,
-      grandAmount: 0
+      grandAmount: 25
     },
     updatedAt: "2026-05-30T10:57:01.419Z"
   };
@@ -530,6 +590,77 @@ describe("backend order API", function () {
     }
   });
 
+  it("rate limits proxied clients by their real IP without trusting arbitrary direct hops", async function () {
+    var mock = createMockPrisma();
+    var app = createTestApp(mock, { loginRateLimitMax: 2 });
+    var serverInfo = await listen(app);
+    var errorCalls = [];
+    var originalError = console.error;
+    console.error = function () {
+      errorCalls.push(Array.prototype.slice.call(arguments));
+    };
+
+    async function failedLogin(ipAddress) {
+      return fetch(serverInfo.url + "/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-For": ipAddress
+        },
+        body: JSON.stringify({ username: "unknown", password: "wrong-password" })
+      });
+    }
+
+    try {
+      expect(app.get("trust proxy")).toBe("loopback");
+      expect(app.get("trust proxy fn")("127.0.0.1", 0)).toBe(true);
+      expect(app.get("trust proxy fn")("203.0.113.50", 0)).toBe(false);
+      expect((await failedLogin("198.51.100.10")).status).toBe(401);
+      expect((await failedLogin("198.51.100.10")).status).toBe(401);
+      expect((await failedLogin("198.51.100.10")).status).toBe(429);
+      expect((await failedLogin("198.51.100.11")).status).toBe(401);
+      expect(JSON.stringify(errorCalls)).not.toContain("ERR_ERL_UNEXPECTED_X_FORWARDED_FOR");
+      expect(JSON.stringify(errorCalls)).not.toContain("ERR_ERL_PERMISSIVE_TRUST_PROXY");
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  it("does not consume the failed-login allowance after a successful login", async function () {
+    var mock = createMockPrisma();
+    mock.storeUser({
+      id: "rate-limit-admin",
+      username: "admin",
+      displayName: "Admin",
+      passwordHash: await hashPassword("correct-password"),
+      isActive: true,
+      roles: [{ role: { code: "ADMIN" } }]
+    });
+    var serverInfo = await listen(createTestApp(mock, { loginRateLimitMax: 2 }));
+    var originalError = console.error;
+    console.error = function () {};
+
+    async function login(username, password) {
+      return fetch(serverInfo.url + "/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-For": "203.0.113.20"
+        },
+        body: JSON.stringify({ username: username, password: password })
+      });
+    }
+
+    try {
+      expect((await login("admin", "correct-password")).status).toBe(200);
+      expect((await login("unknown", "wrong-password")).status).toBe(401);
+      expect((await login("unknown", "wrong-password")).status).toBe(401);
+      expect((await login("unknown", "wrong-password")).status).toBe(429);
+    } finally {
+      console.error = originalError;
+    }
+  });
+
   it("logs in with an active bcrypt admin account and returns a JWT", async function () {
     var mock = createMockPrisma();
     mock.storeUser({
@@ -662,6 +793,47 @@ describe("backend order API", function () {
     expect(response.status).toBe(200);
     expect(body.orders).toHaveLength(1);
     expect(body.orders[0].id).toBe("operator-readable-order");
+  });
+
+  it("returns stable bounded order pages with total metadata", async function () {
+    var mock = createMockPrisma();
+    [1, 2, 3, 4, 5].forEach(function (number) {
+      mock.storeOrder(createDbOrder({
+        id: "paged-order-" + number,
+        orderNo: "ORD-PAGED-" + number,
+        orderDate: new Date("2026-05-30T00:00:00.000Z")
+      }));
+    });
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders?page=2&pageSize=2", {
+      headers: nonAdminAuthHeaders()
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.orders.map(function (order) { return order.id; })).toEqual(["paged-order-3", "paged-order-2"]);
+    expect(body.pagination).toEqual({ page: 2, pageSize: 2, total: 5, totalPages: 3 });
+    expect(mock.captured.rootFindManyArgs[0].skip).toBe(2);
+    expect(mock.captured.rootFindManyArgs[0].take).toBe(2);
+    expect(mock.captured.rootFindManyArgs[0].orderBy).toEqual([{ updatedAt: "desc" }, { id: "desc" }]);
+    expect(mock.captured.rootOrderCountCalls).toBe(1);
+  });
+
+  it("defaults invalid order page values and caps the page size", async function () {
+    var mock = createMockPrisma();
+    mock.storeOrder(createDbOrder({ id: "bounded-order", orderNo: "ORD-BOUNDED" }));
+    var serverInfo = await listen(createTestApp(mock));
+
+    var response = await fetch(serverInfo.url + "/api/orders?page=0&pageSize=999", {
+      headers: nonAdminAuthHeaders()
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.pagination).toEqual({ page: 1, pageSize: 100, total: 1, totalPages: 1 });
+    expect(mock.captured.rootFindManyArgs[0].skip).toBe(0);
+    expect(mock.captured.rootFindManyArgs[0].take).toBe(100);
   });
 
   it("rejects config reads without a bearer token", async function () {
@@ -1271,12 +1443,65 @@ describe("backend order API", function () {
     expect(mock.captured.createData.completionMonth).toBeNull();
     expect(mock.captured.createData.mapLocationCacheId).toBeNull();
     expect(mock.captured.createData.mainRows).toBeUndefined();
-    expect(mock.captured.createData.lineItems).toBeUndefined();
+    expect(mock.captured.createData.lineItems.create).toHaveLength(1);
+    expect(mock.captured.createData.accessoryAmount).toBe(25);
+    expect(mock.captured.createData.grandAmount).toBe(25);
     expect(mock.captured.mapLocationUpsertCalls).toBe(0);
     expect(body.order.steelCategory).toBe("友发");
     expect(body.order.galvanizingProcess).toBe("双镀锌");
     expect(body.order.deliveryMethod).toBe("自提");
     expect(body.order.items.mainRows).toEqual([]);
+    expect(body.order.items.accessories).toHaveLength(1);
+  });
+
+  it("records order operators and exposes admin-only audit history", async function () {
+    var mock = createMockPrisma();
+    mock.storeUser({
+      id: "test-user-id",
+      username: "admin",
+      displayName: "红波管理员",
+      isActive: true,
+      roles: [{ role: { code: "ADMIN" } }]
+    });
+    var serverInfo = await listen(createTestApp(mock));
+    var payload = createFrontendPayload();
+
+    var createResponse = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload)
+    });
+    var created = (await createResponse.json()).order;
+    var updateResponse = await fetch(serverInfo.url + "/api/orders/" + created.id, {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(Object.assign({}, payload, { customerName: "审计后的客户" }))
+    });
+    var updated = (await updateResponse.json()).order;
+    var auditResponse = await fetch(serverInfo.url + "/api/audit-logs?entityType=ORDER&pageSize=10", {
+      headers: authHeaders()
+    });
+    var auditBody = await auditResponse.json();
+    var forbiddenResponse = await fetch(serverInfo.url + "/api/audit-logs", {
+      headers: nonAdminAuthHeaders()
+    });
+
+    expect(createResponse.status).toBe(200);
+    expect(updateResponse.status).toBe(200);
+    expect(mock.captured.createData.createdById).toBe("test-user-id");
+    expect(mock.captured.createData.updatedById).toBe("test-user-id");
+    expect(mock.captured.updateData.updatedById).toBe("test-user-id");
+    expect(created.createdBy).toEqual({ id: "test-user-id", username: "admin", displayName: "红波管理员" });
+    expect(updated.updatedBy).toEqual({ id: "test-user-id", username: "admin", displayName: "红波管理员" });
+    expect(auditResponse.status).toBe(200);
+    expect(auditBody.pagination.total).toBe(2);
+    expect(auditBody.logs.map(function (log) { return log.action; })).toEqual(["ORDER_UPDATE", "ORDER_CREATE"]);
+    expect(auditBody.logs[0].actor.displayName).toBe("红波管理员");
+    expect(auditBody.logs[0].before.customerName).toBe(payload.customerName);
+    expect(auditBody.logs[0].after.customerName).toBe("审计后的客户");
+    expect(mock.captured.auditLogFindManyArgs.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
+    expect(forbiddenResponse.status).toBe(403);
+    expect((await forbiddenResponse.json()).code).toBe("AUTH_FORBIDDEN");
   });
 
   it("persists main row segment lengths and returns them in create, get, and list responses", async function () {
@@ -1410,6 +1635,153 @@ describe("backend order API", function () {
     expect(response.status).toBe(400);
     expect(body.code).toBe("INVALID_ORDER_DATE");
     expect(body.message).toContain("orderDate");
+  });
+
+  it("rejects orders without an order date before opening a transaction", async function () {
+    var mock = createMockPrisma();
+    mock.prisma.$transaction = async function () {
+      throw new Error("Database should not be called when orderDate is missing.");
+    };
+    var serverInfo = await listen(createTestApp(mock));
+    var payload = createFrontendPayload();
+    delete payload.orderDate;
+
+    var response = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload)
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("ORDER_DATE_REQUIRED");
+  });
+
+  it("rejects segment lengths that exceed the database decimal range", async function () {
+    var mock = createMockPrisma();
+    mock.prisma.$transaction = async function () {
+      throw new Error("Database should not be called for an oversized segment length.");
+    };
+    var serverInfo = await listen(createTestApp(mock));
+    var payload = Object.assign(createFrontendPayload(), {
+      items: {
+        mainRows: [{ lengthsText: "2.5", totalQty: 2, actual: 12, area: 5, segmentLength: 10000 }],
+        accessories: [],
+        steels: [],
+        otherTiles: []
+      },
+      totals: {
+        areaTotal: 5,
+        mainAmount: 100,
+        accessoryAmount: 0,
+        steelAmount: 0,
+        otherTileAmount: 0,
+        grandAmount: 100
+      }
+    });
+
+    var response = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload)
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_MAIN_ROW_SEGMENT_LENGTH");
+  });
+
+  it("rejects orders without a customer or any valid detail rows before opening a transaction", async function () {
+    var mock = createMockPrisma();
+    mock.prisma.$transaction = async function () {
+      throw new Error("Database should not be called for invalid order fields.");
+    };
+    var serverInfo = await listen(createTestApp(mock));
+    var missingCustomer = Object.assign(createFrontendPayload(), { customerName: "  " });
+    var missingItems = Object.assign(createFrontendPayload(), {
+      items: { mainRows: [], accessories: [], steels: [], otherTiles: [] },
+      totals: { areaTotal: 0, mainAmount: 0, accessoryAmount: 0, steelAmount: 0, otherTileAmount: 0, grandAmount: 0 }
+    });
+
+    var customerResponse = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(missingCustomer)
+    });
+    var itemsResponse = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(missingItems)
+    });
+
+    expect(customerResponse.status).toBe(400);
+    expect((await customerResponse.json()).code).toBe("CUSTOMER_NAME_REQUIRED");
+    expect(itemsResponse.status).toBe(400);
+    expect((await itemsResponse.json()).code).toBe("ORDER_ITEMS_REQUIRED");
+  });
+
+  it("recalculates line subtotals and order totals instead of trusting client amounts", async function () {
+    var mock = createMockPrisma();
+    var serverInfo = await listen(createTestApp(mock));
+    var payload = Object.assign(createFrontendPayload(), {
+      items: {
+        mainRows: [{ lengthsText: "2.5", totalQty: 2, actual: 12, area: 5 }],
+        accessories: [{ name: "正脊瓦", qty: 2, unit: "件", price: 10, subtotal: 9999 }],
+        steels: [{ name: "方管", qty: 1.5, unit: "支", price: 20, subtotal: 1 }],
+        otherTiles: [{ name: "透明瓦", length: 2.5, qty: 3, unit: "片", price: 18, subtotal: 0 }]
+      },
+      totals: {
+        areaTotal: 999,
+        mainAmount: 100.129,
+        accessoryAmount: 9999,
+        steelAmount: 9999,
+        otherTileAmount: 9999,
+        grandAmount: 99999
+      }
+    });
+
+    var response = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload)
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mock.captured.createData.areaTotal).toBe(5);
+    expect(mock.captured.createData.mainAmount).toBe(100.13);
+    expect(mock.captured.createData.accessoryAmount).toBe(20);
+    expect(mock.captured.createData.steelAmount).toBe(30);
+    expect(mock.captured.createData.otherTileAmount).toBe(135);
+    expect(mock.captured.createData.grandAmount).toBe(285.13);
+    expect(mock.captured.createData.lineItems.create.map(function (item) { return item.subtotal; })).toEqual([20, 30, 135]);
+    expect(body.order.totals.grandAmount).toBe(285.13);
+  });
+
+  it("rejects incomplete priced rows instead of silently saving zero-value details", async function () {
+    var mock = createMockPrisma();
+    mock.prisma.$transaction = async function () {
+      throw new Error("Database should not be called for invalid line items.");
+    };
+    var serverInfo = await listen(createTestApp(mock));
+    var payload = Object.assign(createFrontendPayload(), {
+      items: {
+        mainRows: [],
+        accessories: [{ name: "正脊瓦", qty: 2, unit: "件", price: 0, subtotal: 0 }],
+        steels: [],
+        otherTiles: []
+      }
+    });
+
+    var response = await fetch(serverInfo.url + "/api/orders", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload)
+    });
+    var body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_LINE_ITEM_PRICE");
   });
 
   it("returns 503 for P2028 transaction timeouts without retrying the closed transaction", async function () {
@@ -1554,7 +1926,11 @@ describe("backend order API", function () {
       id: true,
       orderNo: true,
       clientOrderId: true,
-      orderDate: true
+      orderDate: true,
+      customerName: true,
+      deliveryAddress: true,
+      areaTotal: true,
+      grandAmount: true
     });
     expect(mock.captured.deleteMainRowsArgs.where.orderId).toBe(existing.id);
     expect(mock.captured.deleteLineItemsArgs.where.orderId).toBe(existing.id);
@@ -1658,5 +2034,8 @@ describe("backend order API", function () {
     expect(body.ok).toBe(true);
     expect(body.order.id).toBe(existing.id);
     expect(mock.ordersById[existing.id]).toBeUndefined();
+    expect(mock.auditLogs).toHaveLength(1);
+    expect(mock.auditLogs[0].action).toBe("ORDER_DELETE");
+    expect(mock.auditLogs[0].before.customerName).toBe("Delete Customer");
   });
 });

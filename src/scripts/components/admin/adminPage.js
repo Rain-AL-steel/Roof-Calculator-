@@ -6,6 +6,7 @@ import {
   saveConfigWithApiFallback,
   validateConfig
 } from "../../services/configService.js";
+import { fetchAuditLogsFromApi, isApiConfigured } from "../../services/apiClient.js";
 import { escapeHtml } from "../../utils.js";
 import { confirmAction, showToast } from "../common/feedback.js";
 import { enterElement } from "../common/motion.js";
@@ -79,11 +80,97 @@ function formatPrice(value) {
   return value === null || value === undefined || !Number.isFinite(Number(value)) ? "" : String(value);
 }
 
+var AUDIT_ACTION_LABELS = {
+  ORDER_CREATE: "新建订单",
+  ORDER_UPDATE: "修改订单",
+  ORDER_DELETE: "删除订单"
+};
+
+export function getAuditActionLabel(action) {
+  return AUDIT_ACTION_LABELS[String(action || "")] || String(action || "未知操作");
+}
+
+function formatAuditValue(field, value) {
+  if (field === "grandAmount") return "¥" + (Number(value) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (field === "areaTotal") return (Number(value) || 0).toLocaleString("zh-CN", { maximumFractionDigits: 4 }) + "㎡";
+  return String(value === null || value === undefined || value === "" ? "未填写" : value);
+}
+
+export function summarizeAuditLog(log) {
+  var source = log || {};
+  var before = source.before || {};
+  var after = source.after || {};
+  if (source.action === "ORDER_CREATE") {
+    return "客户：" + formatAuditValue("customerName", after.customerName) + "；金额：" + formatAuditValue("grandAmount", after.grandAmount);
+  }
+  if (source.action === "ORDER_DELETE") {
+    return "删除客户“" + formatAuditValue("customerName", before.customerName) + "”的订单，金额 " + formatAuditValue("grandAmount", before.grandAmount);
+  }
+  if (source.action === "ORDER_UPDATE") {
+    var fields = [
+      ["customerName", "客户"], ["orderDate", "日期"], ["deliveryAddress", "地址"],
+      ["areaTotal", "面积"], ["grandAmount", "金额"]
+    ];
+    var changes = fields.filter(function (item) {
+      return String(before[item[0]] === undefined ? "" : before[item[0]]) !== String(after[item[0]] === undefined ? "" : after[item[0]]);
+    }).map(function (item) {
+      return item[1] + "：" + formatAuditValue(item[0], before[item[0]]) + " → " + formatAuditValue(item[0], after[item[0]]);
+    });
+    return changes.length ? changes.join("；") : "更新了订单明细或关联信息";
+  }
+  return "记录了该操作";
+}
+
+function formatAuditTime(value) {
+  var date = new Date(value || "");
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function getAuditActorName(log) {
+  var actor = log && log.actor ? log.actor : {};
+  return actor.displayName || actor.username || "未知操作人";
+}
+
+function renderAuditPanel(state) {
+  var source = state || {};
+  var actionOptions = [
+    ["", "全部操作"], ["ORDER_CREATE", "新建订单"], ["ORDER_UPDATE", "修改订单"], ["ORDER_DELETE", "删除订单"]
+  ].map(function (item) {
+    return "<option value='" + item[0] + "'" + (source.action === item[0] ? " selected" : "") + ">" + item[1] + "</option>";
+  }).join("");
+  var body;
+  if (source.localOnly) {
+    body = "<div class='empty-note'>本机模式没有服务器审计日志。连接后端 API 后可查询操作记录。</div>";
+  } else if (source.loading) {
+    body = "<div class='empty-note'>正在读取审计记录...</div>";
+  } else if (source.error) {
+    body = "<div class='empty-note audit-error'>" + escapeHtml(source.error) + "</div>";
+  } else if (!source.logs.length) {
+    body = "<div class='empty-note'>暂无符合条件的审计记录</div>";
+  } else {
+    body = "<div class='admin-table-wrap'><table class='admin-table audit-table'><caption class='sr-only'>订单操作审计记录</caption><thead><tr><th scope='col'>时间</th><th scope='col'>操作人</th><th scope='col'>动作</th><th scope='col'>对象</th><th scope='col'>变更摘要</th><th scope='col'>来源 IP</th></tr></thead><tbody>" + source.logs.map(function (log) {
+      var metadata = log.metadata || {};
+      var target = metadata.orderNo || log.entityId || "—";
+      return "<tr><td class='audit-time'>" + escapeHtml(formatAuditTime(log.createdAt)) + "</td>" +
+        "<td><strong>" + escapeHtml(getAuditActorName(log)) + "</strong><small>" + escapeHtml(log.actor && log.actor.username || "") + "</small></td>" +
+        "<td><span class='audit-action' data-action='" + escapeHtml(log.action) + "'>" + escapeHtml(getAuditActionLabel(log.action)) + "</span></td>" +
+        "<td class='audit-target'>" + escapeHtml(target) + "</td>" +
+        "<td class='audit-summary'>" + escapeHtml(summarizeAuditLog(log)) + "</td>" +
+        "<td class='audit-ip'>" + escapeHtml(log.ipAddress || "—") + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+  }
+  var pagination = source.pagination || { page: 1, totalPages: 1, total: 0 };
+  return "<section class='admin-section audit-section'><div class='admin-section-head'><div><h3>操作审计</h3><p>记录订单的新建、修改和删除，审计内容只读且仅管理员可见。</p></div><button type='button' class='btn btn-neutral' id='auditRefresh'>刷新</button></div>" +
+    "<div class='audit-toolbar'><label class='field'><span>操作类型</span><select id='auditActionFilter'>" + actionOptions + "</select></label><span>共 " + Number(pagination.total || 0) + " 条记录</span></div>" + body +
+    "<div class='history-pagination audit-pagination'" + (source.localOnly || pagination.totalPages <= 1 ? " hidden" : "") + "><button type='button' class='btn btn-neutral compact-btn' id='auditPrevPage'" + (pagination.page <= 1 ? " disabled" : "") + ">上一页</button><span>第 " + pagination.page + " / " + pagination.totalPages + " 页</span><button type='button' class='btn btn-neutral compact-btn' id='auditNextPage'" + (pagination.page >= pagination.totalPages ? " disabled" : "") + ">下一页</button></div></section>";
+}
+
 function renderOptionRows(draft, path, numericValue) {
   return sortBySort(getByPath(draft, path)).map(function (item) {
     return "<tr data-collection='" + escapeHtml(path) + "' data-id='" + escapeHtml(item.id) + "'>" +
-      "<td><input class='admin-input' data-item-field='value' data-value-type='" + (numericValue ? "number" : "text") + "' type='" + (numericValue ? "number" : "text") + "' step='0.001' value='" + escapeHtml(item.value) + "' /></td>" +
-      "<td><input class='admin-input compact' data-item-field='sort' data-value-type='number' type='number' step='1' value='" + escapeHtml(item.sort) + "' /></td>" +
+      "<td><input class='admin-input' aria-label='选项值' data-item-field='value' data-value-type='" + (numericValue ? "number" : "text") + "' type='" + (numericValue ? "number" : "text") + "' step='0.001' value='" + escapeHtml(item.value) + "' /></td>" +
+      "<td><input class='admin-input compact' aria-label='排序' data-item-field='sort' data-value-type='number' type='number' step='1' value='" + escapeHtml(item.sort) + "' /></td>" +
       "<td><label class='admin-switch'><input data-item-field='enabled' type='checkbox'" + (item.enabled !== false ? " checked" : "") + " /><span>启用</span></label></td>" +
       "<td class='admin-row-actions'><button type='button' class='icon-btn admin-move' data-move='-1' title='上移' aria-label='上移'>↑</button><button type='button' class='icon-btn admin-move' data-move='1' title='下移' aria-label='下移'>↓</button><button type='button' class='icon-btn admin-delete' title='删除' aria-label='删除'>×</button></td>" +
       "</tr>";
@@ -92,15 +179,15 @@ function renderOptionRows(draft, path, numericValue) {
 
 function renderCatalogRows(draft, path, type) {
   return sortBySort(getByPath(draft, path)).map(function (item) {
-    var specCell = type === "steel" ? "<td><input class='admin-input' data-item-field='spec' type='text' value='" + escapeHtml(item.spec || "") + "' /></td>" : "";
+    var specCell = type === "steel" ? "<td><input class='admin-input' aria-label='规格' data-item-field='spec' type='text' value='" + escapeHtml(item.spec || "") + "' /></td>" : "";
     var commonCell = type === "accessory" ? "<td><label class='admin-switch'><input data-item-field='common' type='checkbox'" + (item.common ? " checked" : "") + " /><span>常用</span></label></td>" : "";
     return "<tr data-collection='" + escapeHtml(path) + "' data-id='" + escapeHtml(item.id) + "'>" +
-      "<td><input class='admin-input' data-item-field='name' type='text' value='" + escapeHtml(item.name) + "' /></td>" +
+      "<td><input class='admin-input' aria-label='名称' data-item-field='name' type='text' value='" + escapeHtml(item.name) + "' /></td>" +
       specCell +
-      "<td><input class='admin-input compact' data-item-field='defaultUnit' type='text' list='unitOptions' value='" + escapeHtml(item.defaultUnit) + "' /></td>" +
-      "<td><input class='admin-input compact' data-item-field='defaultPrice' data-value-type='number' type='number' min='0' step='0.01' value='" + escapeHtml(formatPrice(item.defaultPrice)) + "' /></td>" +
+      "<td><input class='admin-input compact' aria-label='默认单位' data-item-field='defaultUnit' type='text' list='unitOptions' value='" + escapeHtml(item.defaultUnit) + "' /></td>" +
+      "<td><input class='admin-input compact' aria-label='默认单价' data-item-field='defaultPrice' data-value-type='number' type='number' min='0' step='0.01' value='" + escapeHtml(formatPrice(item.defaultPrice)) + "' /></td>" +
       commonCell +
-      "<td><input class='admin-input compact' data-item-field='sort' data-value-type='number' type='number' step='1' value='" + escapeHtml(item.sort) + "' /></td>" +
+      "<td><input class='admin-input compact' aria-label='排序' data-item-field='sort' data-value-type='number' type='number' step='1' value='" + escapeHtml(item.sort) + "' /></td>" +
       "<td><label class='admin-switch'><input data-item-field='enabled' type='checkbox'" + (item.enabled !== false ? " checked" : "") + " /><span>启用</span></label></td>" +
       "<td class='admin-row-actions'><button type='button' class='icon-btn admin-move' data-move='-1' title='上移' aria-label='上移'>↑</button><button type='button' class='icon-btn admin-move' data-move='1' title='下移' aria-label='下移'>↓</button><button type='button' class='icon-btn admin-delete' title='删除' aria-label='删除'>×</button></td>" +
       "</tr>";
@@ -109,14 +196,14 @@ function renderCatalogRows(draft, path, type) {
 
 function renderOptionSection(draft, title, path, valueLabel, numericValue) {
   return "<section class='admin-section'><div class='admin-section-head'><h3>" + escapeHtml(title) + "</h3><button type='button' class='btn btn-soft' data-add-option='" + escapeHtml(path) + "'>新增</button></div>" +
-    "<div class='admin-table-wrap'><table class='admin-table'><thead><tr><th>" + escapeHtml(valueLabel) + "</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>" + renderOptionRows(draft, path, numericValue) + "</tbody></table></div></section>";
+    "<div class='admin-table-wrap'><table class='admin-table'><caption class='sr-only'>" + escapeHtml(title) + "</caption><thead><tr><th scope='col'>" + escapeHtml(valueLabel) + "</th><th scope='col'>排序</th><th scope='col'>状态</th><th scope='col'>操作</th></tr></thead><tbody>" + renderOptionRows(draft, path, numericValue) + "</tbody></table></div></section>";
 }
 
 function renderCatalogSection(draft, title, path, type) {
-  var specHead = type === "steel" ? "<th>规格</th>" : "";
-  var commonHead = type === "accessory" ? "<th>常用</th>" : "";
+  var specHead = type === "steel" ? "<th scope='col'>规格</th>" : "";
+  var commonHead = type === "accessory" ? "<th scope='col'>常用</th>" : "";
   return "<section class='admin-section'><div class='admin-section-head'><h3>" + escapeHtml(title) + "</h3><button type='button' class='btn btn-soft' data-add-catalog='" + escapeHtml(path) + "'>新增</button></div>" +
-    "<div class='admin-table-wrap'><table class='admin-table'><thead><tr><th>名称</th>" + specHead + "<th>单位</th><th>默认单价</th>" + commonHead + "<th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>" + renderCatalogRows(draft, path, type) + "</tbody></table></div></section>";
+    "<div class='admin-table-wrap'><table class='admin-table'><caption class='sr-only'>" + escapeHtml(title) + "</caption><thead><tr><th scope='col'>名称</th>" + specHead + "<th scope='col'>单位</th><th scope='col'>默认单价</th>" + commonHead + "<th scope='col'>排序</th><th scope='col'>状态</th><th scope='col'>操作</th></tr></thead><tbody>" + renderCatalogRows(draft, path, type) + "</tbody></table></div></section>";
 }
 
 function renderDefaultSegmentOptions(draft) {
@@ -134,7 +221,7 @@ function renderLogoPreview(draft) {
 
 var ADMIN_CATEGORIES = [
   ["basics", "基础资料"], ["map", "地图设置"], ["products", "产品选项"],
-  ["steel", "钢材配置"], ["reports", "报表模板"], ["data", "数据管理"]
+  ["steel", "钢材配置"], ["reports", "报表模板"], ["audit", "审计记录"], ["data", "数据管理"]
 ];
 
 function renderAdminNav(activeCategory) {
@@ -147,7 +234,7 @@ function renderCategoryPanel(id, activeCategory, content) {
   return "<div class='admin-category-panel' data-admin-category-panel='" + id + "'" + (id === activeCategory ? "" : " hidden") + ">" + content + "</div>";
 }
 
-function renderAdmin(draft, activeCategory, isAdmin) {
+function renderAdmin(draft, activeCategory, isAdmin, auditState) {
   var basics = "<section class='admin-section'><div class='admin-section-head'><h3>基础参数</h3></div><div class='admin-form-grid'>" +
     "<label class='field'><span>固定宽度（米）</span><input data-field='basics.fixedWidth' data-value-type='number' type='number' min='0.001' step='0.001' value='" + escapeHtml(draft.basics.fixedWidth) + "' /></label>" +
     "<label class='field'><span>默认节长</span><select data-field='basics.defaultSegmentLength' data-value-type='number'>" + renderDefaultSegmentOptions(draft) + "</select></label>" +
@@ -172,7 +259,8 @@ function renderAdmin(draft, activeCategory, isAdmin) {
     "<label class='field'><span>屋面材料标题</span><input data-field='reportTemplate.roofMaterialTitle' type='text' value='" + escapeHtml(draft.reportTemplate.roofMaterialTitle) + "' /></label><label class='field'><span>其他瓦标题</span><input data-field='reportTemplate.otherTileTitle' type='text' value='" + escapeHtml(draft.reportTemplate.otherTileTitle) + "' /></label><label class='field'><span>地址标签</span><input data-field='reportTemplate.addressLabel' type='text' value='" + escapeHtml(draft.reportTemplate.addressLabel) + "' /></label><label class='field'><span>电话标签</span><input data-field='reportTemplate.phoneLabel' type='text' value='" + escapeHtml(draft.reportTemplate.phoneLabel) + "' /></label>" +
     "<label class='field span-3'><span>温馨提示</span><textarea data-field='reportTemplate.warmTip' rows='3'>" + escapeHtml(draft.reportTemplate.warmTip) + "</textarea></label><label class='field span-3'><span>签字栏文字</span><input data-field='reportTemplate.signatureLabel' type='text' value='" + escapeHtml(draft.reportTemplate.signatureLabel) + "' /></label><label class='field span-3'><span>日期栏文字</span><input data-field='reportTemplate.receiptDateLabel' type='text' value='" + escapeHtml(draft.reportTemplate.receiptDateLabel) + "' /></label><label class='field span-3'><span>钢铁工艺文字</span><input data-field='reportTemplate.steelProcessText' type='text' value='" + escapeHtml(draft.reportTemplate.steelProcessText) + "' /></label></div></section>";
   var data = "<section class='admin-section danger-zone'><div class='admin-section-head'><h3>危险操作</h3></div><p>清空订单会同时尝试删除服务器与本机记录，失败的服务器记录将保留。</p>" + (isAdmin ? "<button type='button' class='btn btn-danger' id='adminClearOrders'>清空全部订单</button>" : "<p>当前账号没有数据清理权限。</p>") + "</section>";
-  return "<div class='admin-actions-bar'><button type='button' class='btn btn-primary' id='adminSave'>保存配置</button><button type='button' class='btn btn-neutral' id='adminExport'>导出配置 JSON</button><button type='button' class='btn btn-danger' id='adminReset'>恢复默认配置</button></div><div class='admin-status' id='adminStatus' role='status'></div><div class='admin-workspace'>" + renderAdminNav(activeCategory) + "<div class='admin-category-content'>" + renderCategoryPanel("basics", activeCategory, basics) + renderCategoryPanel("map", activeCategory, map) + renderCategoryPanel("products", activeCategory, products) + renderCategoryPanel("steel", activeCategory, steel) + renderCategoryPanel("reports", activeCategory, reports) + renderCategoryPanel("data", activeCategory, data) + "</div></div>";
+  var configActions = activeCategory === "audit" ? "" : "<div class='admin-actions-bar'><button type='button' class='btn btn-primary' id='adminSave'>保存配置</button><button type='button' class='btn btn-neutral' id='adminExport'>导出配置 JSON</button><button type='button' class='btn btn-danger' id='adminReset'>恢复默认配置</button></div>";
+  return configActions + "<div class='admin-status' id='adminStatus' role='status'></div><div class='admin-workspace'>" + renderAdminNav(activeCategory) + "<div class='admin-category-content'>" + renderCategoryPanel("basics", activeCategory, basics) + renderCategoryPanel("map", activeCategory, map) + renderCategoryPanel("products", activeCategory, products) + renderCategoryPanel("steel", activeCategory, steel) + renderCategoryPanel("reports", activeCategory, reports) + renderCategoryPanel("audit", activeCategory, renderAuditPanel(auditState)) + renderCategoryPanel("data", activeCategory, data) + "</div></div>";
 }
 
 export function initAdminPage(options) {
@@ -183,6 +271,15 @@ export function initAdminPage(options) {
   var draft = cloneConfig(getConfig());
   var isSavingConfig = false;
   var activeCategory = "basics";
+  var auditState = {
+    logs: [],
+    action: "",
+    loading: false,
+    error: "",
+    localOnly: !isApiConfigured(),
+    loaded: false,
+    pagination: { page: 1, pageSize: 30, total: 0, totalPages: 1 }
+  };
 
   function showStatus(message, isError) {
     var status = document.getElementById("adminStatus");
@@ -193,8 +290,39 @@ export function initAdminPage(options) {
   }
 
   function render() {
-    root.innerHTML = renderAdmin(draft, activeCategory, isAdmin());
+    root.innerHTML = renderAdmin(draft, activeCategory, isAdmin(), auditState);
     enterElement(root.querySelector("[data-admin-category-panel]:not([hidden])"));
+  }
+
+  function loadAuditRecords(force) {
+    auditState.localOnly = !isApiConfigured();
+    if (auditState.localOnly) {
+      auditState.loading = false;
+      auditState.loaded = true;
+      auditState.logs = [];
+      render();
+      return Promise.resolve(auditState);
+    }
+    if (auditState.loading || (auditState.loaded && !force)) return Promise.resolve(auditState);
+    auditState.loading = true;
+    auditState.error = "";
+    render();
+    return fetchAuditLogsFromApi({
+      page: auditState.pagination.page,
+      pageSize: auditState.pagination.pageSize,
+      action: auditState.action,
+      entityType: "ORDER"
+    }).then(function (payload) {
+      auditState.logs = payload && Array.isArray(payload.logs) ? payload.logs : [];
+      auditState.pagination = payload && payload.pagination ? payload.pagination : auditState.pagination;
+      auditState.loaded = true;
+    }).catch(function (error) {
+      auditState.error = error && error.message ? error.message : "审计记录读取失败。";
+      auditState.logs = [];
+    }).finally(function () {
+      auditState.loading = false;
+      render();
+    });
   }
 
   function setSaveBusy(isBusy) {
@@ -352,6 +480,13 @@ export function initAdminPage(options) {
 
   root.addEventListener("change", function (event) {
     var target = event.target;
+    if (target.id === "auditActionFilter") {
+      auditState.action = target.value;
+      auditState.pagination.page = 1;
+      auditState.loaded = false;
+      loadAuditRecords(true);
+      return;
+    }
     if (target.id === "adminLogoUpload") {
       uploadDefaultLogo(target.files && target.files[0]);
       target.value = "";
@@ -367,7 +502,19 @@ export function initAdminPage(options) {
     if (target.dataset.adminCategory) {
       activeCategory = target.dataset.adminCategory;
       render();
+      if (activeCategory === "audit") loadAuditRecords(false);
       return;
+    }
+    if (target.id === "auditRefresh") loadAuditRecords(true);
+    if (target.id === "auditPrevPage") {
+      auditState.pagination.page = Math.max(1, auditState.pagination.page - 1);
+      auditState.loaded = false;
+      loadAuditRecords(true);
+    }
+    if (target.id === "auditNextPage") {
+      auditState.pagination.page = Math.min(auditState.pagination.totalPages, auditState.pagination.page + 1);
+      auditState.loaded = false;
+      loadAuditRecords(true);
     }
     if (target.id === "adminSave") saveDraft();
     if (target.id === "adminExport") exportDraft();
@@ -396,6 +543,7 @@ export function initAdminPage(options) {
     refreshFromConfig: function (config) {
       draft = cloneConfig(config || getConfig());
       render();
+      if (activeCategory === "audit") loadAuditRecords(true);
     }
   };
 }

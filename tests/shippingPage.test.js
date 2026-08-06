@@ -6,7 +6,8 @@ import {
   computeOtherTileTotalLength,
   formatInputPrice,
   hasWorkingDraftContent,
-  normalizeOrderSegmentLength
+  normalizeOrderSegmentLength,
+  validateWorkingOrder
 } from "../src/scripts/components/shipping/shippingPage.js";
 
 describe("shipping page price inputs", function () {
@@ -83,5 +84,38 @@ describe("shipping page price inputs", function () {
     })).toBe(false);
     expect(hasWorkingDraftContent({ mainRows: [{ segmentCount: "20", quantity: "" }] })).toBe(true);
     expect(hasWorkingDraftContent({ order: { customerName: "待录客户" } })).toBe(true);
+  });
+
+  it("validates required order fields and incomplete active rows", function () {
+    var result = validateWorkingOrder({
+      order: { orderDate: "2026-02-30", customerName: "" },
+      mainTile: { segmentLength: "0.218", unitPrice: "0" },
+      mainRows: [{ length: "2.5", quantity: "" }],
+      accessories: [{ name: "正脊瓦", quantity: "2", unit: "件", price: "" }],
+      steels: [],
+      otherTiles: []
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.map(function (error) { return error.path; })).toEqual(expect.arrayContaining([
+      "order.orderDate",
+      "order.customerName",
+      "mainRows.0.quantity",
+      "mainTile.unitPrice",
+      "accessories.0.price"
+    ]));
+  });
+
+  it("accepts a complete mixed order working draft", function () {
+    var result = validateWorkingOrder({
+      order: { orderDate: "2026-08-04", customerName: "红波客户" },
+      mainTile: { segmentLength: "0.218", unitPrice: "32.5" },
+      mainRows: [{ segmentCount: "12", quantity: "3" }],
+      accessories: [{ name: "正脊瓦", quantity: "2", unit: "件", price: "10" }],
+      steels: [{ name: "方管", quantity: "1.5", unit: "支", price: "20" }],
+      otherTiles: [{ name: "透明瓦", length: "2.5", quantity: "3", unit: "片", price: "18" }]
+    });
+
+    expect(result).toEqual({ valid: true, errors: [] });
   });
 });

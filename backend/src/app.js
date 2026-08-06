@@ -24,10 +24,12 @@ const ORDER_MAP_IMAGE_ALLOWED_TYPES = {
   "image/webp": true
 };
 
-function createLoginRateLimiter() {
+function createLoginRateLimiter(options) {
+  var settings = options || {};
   return rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
+    windowMs: Number(settings.loginRateLimitWindowMs) || 15 * 60 * 1000,
+    limit: Number(settings.loginRateLimitMax) || 10,
+    skipSuccessfulRequests: true,
     standardHeaders: true,
     legacyHeaders: false,
     handler: function (req, res) {
@@ -91,6 +93,74 @@ function getSafeErrorLog(error, req) {
 
 function compactLogText(value) {
   return redactSensitiveText(String(value || "").replace(/\s+/g, " ").trim()).slice(0, 120);
+}
+
+function getRequestActorUserId(req) {
+  return compactLogText(req && req.user && (req.user.sub || req.user.id));
+}
+
+function getRequestAuditMetadata(req, metadata) {
+  return Object.assign({
+    actorUsername: compactLogText(req && req.user && req.user.username),
+    requestId: compactLogText(req && req.requestId)
+  }, metadata || {});
+}
+
+function getOrderAuditSnapshot(order) {
+  var source = order || {};
+  var totals = source.totals || {};
+  return {
+    orderNo: compactLogText(source.orderNo),
+    orderDate: source.orderDate instanceof Date ? source.orderDate.toISOString().slice(0, 10) : compactLogText(source.orderDate),
+    customerName: compactLogText(source.customerName),
+    deliveryAddress: compactLogText(source.deliveryAddress),
+    areaTotal: Number(source.areaTotal !== undefined ? source.areaTotal : totals.areaTotal) || 0,
+    grandAmount: Number(source.grandAmount !== undefined ? source.grandAmount : totals.grandAmount) || 0
+  };
+}
+
+async function createAuditLog(prisma, req, input) {
+  var source = input || {};
+  var data = {
+    actorUserId: getRequestActorUserId(req) || null,
+    action: compactLogText(source.action),
+    entityType: compactLogText(source.entityType),
+    entityId: compactLogText(source.entityId) || null,
+    metadata: getRequestAuditMetadata(req, source.metadata),
+    ipAddress: compactLogText(req && req.ip),
+    userAgent: compactLogText(req && req.get && req.get("user-agent"))
+  };
+  if (source.before) data.before = source.before;
+  if (source.after) data.after = source.after;
+  return prisma.auditLog.create({ data: data });
+}
+
+function parsePositiveInteger(value, fallback, maximum) {
+  var number = Number(value);
+  if (!Number.isInteger(number) || number < 1) return fallback;
+  return maximum ? Math.min(number, maximum) : number;
+}
+
+function toFrontendAuditLog(log) {
+  var source = log || {};
+  var metadata = source.metadata && typeof source.metadata === "object" && !Array.isArray(source.metadata) ? source.metadata : {};
+  var actor = source.actorUser;
+  return {
+    id: source.id,
+    createdAt: source.createdAt instanceof Date ? source.createdAt.toISOString() : String(source.createdAt || ""),
+    action: source.action || "",
+    entityType: source.entityType || "",
+    entityId: source.entityId || "",
+    actor: {
+      id: actor && actor.id ? actor.id : (source.actorUserId || ""),
+      username: actor && actor.username ? actor.username : (metadata.actorUsername || ""),
+      displayName: actor && actor.displayName ? actor.displayName : ""
+    },
+    before: source.before || null,
+    after: source.after || null,
+    metadata: metadata,
+    ipAddress: source.ipAddress || ""
+  };
 }
 
 function getArrayCount(value) {
@@ -573,6 +643,11 @@ export function createApp(options) {
     jwtExpiresIn: getJwtExpiresIn(options)
   };
 
+  // Production Nginx proxies from localhost. Trust only loopback hops so
+  // req.ip resolves to the real client without accepting spoofed headers
+  // from clients that connect to Node directly.
+  app.set("trust proxy", options && options.trustProxy !== undefined ? options.trustProxy : "loopback");
+
   app.use("/api", createApiPerformanceMiddleware());
   app.use(cors(createCorsOptions()));
   app.use(express.json({ limit: "2mb" }));
@@ -601,7 +676,7 @@ export function createApp(options) {
     }
   }));
 
-  app.post("/api/auth/login", createLoginRateLimiter(), asyncHandler(async function (req, res) {
+  app.post("/api/auth/login", createLoginRateLimiter(options), asyncHandler(async function (req, res) {
     var secret = getJwtSecret(authOptions);
     if (!secret) {
       throw createHttpError(500, "JWT_SECRET_NOT_CONFIGURED", "JWT secret is not configured.");
@@ -646,6 +721,44 @@ export function createApp(options) {
     }
 
     res.json({ config: record.value, source: "database" });
+  }));
+
+  app.use("/api/audit-logs", createAuthMiddleware(authOptions), createRoleMiddleware("ADMIN"));
+
+  app.get("/api/audit-logs", asyncHandler(async function (req, res) {
+    var page = parsePositiveInteger(req.query && req.query.page, 1, 1000000);
+    var pageSize = parsePositiveInteger(req.query && req.query.pageSize, 30, 100);
+    var action = compactLogText(req.query && req.query.action);
+    var entityType = compactLogText(req.query && req.query.entityType);
+    var where = {};
+    if (action) where.action = action;
+    if (entityType) where.entityType = entityType;
+
+    var result = await withDatabaseRetry("GET /api/audit-logs", function () {
+      return Promise.all([
+        prisma.auditLog.findMany({
+          where: where,
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            actorUser: { select: { id: true, username: true, displayName: true } }
+          }
+        }),
+        prisma.auditLog.count({ where: where })
+      ]);
+    });
+    var total = Number(result[1]) || 0;
+    var totalPages = Math.max(1, Math.ceil(total / pageSize));
+    res.json({
+      logs: result[0].map(toFrontendAuditLog),
+      pagination: {
+        page: page,
+        pageSize: pageSize,
+        total: total,
+        totalPages: totalPages
+      }
+    });
   }));
 
   app.put("/api/config", createRoleMiddleware("ADMIN"), asyncHandler(async function (req, res) {
@@ -809,13 +922,41 @@ export function createApp(options) {
   }));
 
   app.get("/api/orders", asyncHandler(async function (req, res) {
-    var orders = await withDatabaseRetry("GET /api/orders", function () {
-      return prisma.order.findMany({
-        orderBy: [{ updatedAt: "desc" }],
-        include: getOrderInclude()
+    var hasPagination = Boolean(req.query && (req.query.page !== undefined || req.query.pageSize !== undefined));
+    if (!hasPagination) {
+      var legacyOrders = await withDatabaseRetry("GET /api/orders legacy list", function () {
+        return prisma.order.findMany({
+          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+          include: getOrderInclude()
+        });
       });
+      res.json({ orders: legacyOrders.map(toFrontendOrder) });
+      return;
+    }
+
+    var page = parsePositiveInteger(req.query.page, 1, 1000000);
+    var pageSize = parsePositiveInteger(req.query.pageSize, 50, 100);
+    var result = await withDatabaseRetry("GET /api/orders paginated list", function () {
+      return Promise.all([
+        prisma.order.findMany({
+          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: getOrderInclude()
+        }),
+        prisma.order.count()
+      ]);
     });
-    res.json({ orders: orders.map(toFrontendOrder) });
+    var total = Number(result[1]) || 0;
+    res.json({
+      orders: result[0].map(toFrontendOrder),
+      pagination: {
+        page: page,
+        pageSize: pageSize,
+        total: total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize))
+      }
+    });
   }));
 
   app.get("/api/orders/:id", asyncHandler(async function (req, res) {
@@ -868,14 +1009,24 @@ export function createApp(options) {
           var createData = Object.assign({}, payload.orderData, {
             id: serverOrderId,
             orderNo: payload.nextOrderNo,
-            mapLocationCacheId: null
+            mapLocationCacheId: null,
+            createdById: getRequestActorUserId(req) || null,
+            updatedById: getRequestActorUserId(req) || null
           });
           if (clientOrderId) createData.clientOrderId = clientOrderId;
 
-          return tx.order.create({
+          var created = await tx.order.create({
             data: attachDetailCreates(createData, payload),
             include: getOrderInclude()
           });
+          await createAuditLog(tx, req, {
+            action: "ORDER_CREATE",
+            entityType: "ORDER",
+            entityId: created.id,
+            after: getOrderAuditSnapshot(created),
+            metadata: { orderNo: created.orderNo }
+          });
+          return created;
         }, {
           timeout: 10000
         });
@@ -927,7 +1078,11 @@ export function createApp(options) {
             id: true,
             orderNo: true,
             clientOrderId: true,
-            orderDate: true
+            orderDate: true,
+            customerName: true,
+            deliveryAddress: true,
+            areaTotal: true,
+            grandAmount: true
           }
         });
         if (!existing) {
@@ -935,7 +1090,8 @@ export function createApp(options) {
         }
 
         var orderData = Object.assign({}, payload.orderData, {
-          mapLocationCacheId: null
+          mapLocationCacheId: null,
+          updatedById: getRequestActorUserId(req) || null
         });
 
         await tx.order.update({
@@ -957,6 +1113,15 @@ export function createApp(options) {
             data: attachOrderIdToRows(payload.lineItems, existing.id)
           });
         }
+
+        await createAuditLog(tx, req, {
+          action: "ORDER_UPDATE",
+          entityType: "ORDER",
+          entityId: existing.id,
+          before: getOrderAuditSnapshot(existing),
+          after: getOrderAuditSnapshot(Object.assign({}, existing, orderData)),
+          metadata: { orderNo: existing.orderNo }
+        });
 
         return { orderId: existing.id, payload: payload };
       }, {
@@ -990,10 +1155,18 @@ export function createApp(options) {
           throw createHttpError(404, "ORDER_NOT_FOUND", "Order was not found.");
         }
 
-        return tx.order.delete({
+        var removed = await tx.order.delete({
           where: { id: existing.id },
           include: getOrderInclude()
         });
+        await createAuditLog(tx, req, {
+          action: "ORDER_DELETE",
+          entityType: "ORDER",
+          entityId: existing.id,
+          before: getOrderAuditSnapshot(existing),
+          metadata: { orderNo: existing.orderNo }
+        });
+        return removed;
       }, {
         timeout: 10000
       });

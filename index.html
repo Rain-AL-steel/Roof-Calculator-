@@ -120,9 +120,9 @@
       <path d="M15.4 17.3A10.7 10.7 0 0 1 12 18c-6 0-9.5-6-9.5-6a17 17 0 0 1 3.8-4.2" />
     </symbol>
   </svg>
-  <a class="skip-link" href="#content">跳到内容</a>
-  <div class="app-shell">
-    <section id="authView" class="auth-view" hidden>
+  <a class="skip-link" href="#appMainContent">跳到主要内容</a>
+  <div class="app-shell" id="appMainContent" tabindex="-1">
+    <section id="authView" class="auth-view" role="main" aria-labelledby="authTitle" hidden>
       <div class="auth-brand-panel" aria-label="红波订单工作台">
         <img class="auth-brand-logo" src="./src/assets/brand/hongbo-logo-full.png" alt="红波 泉州销售中心" />
         <div class="auth-brand-copy">
@@ -176,14 +176,14 @@
           <button type="button" class="workspace-tab" data-app-view="historyView"><span class="workspace-tab-index">03</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-history"></use></svg><span>订单记录</span></button>
         </nav>
         <div class="workspace-controls">
-          <button type="button" class="sync-status" id="syncStatusButton" aria-label="查看同步状态" title="查看同步状态"><span class="sync-status-dot" aria-hidden="true"></span><span><strong id="syncStatusText">正在检查</strong><small id="syncStatusMeta">—</small></span></button>
+          <button type="button" class="sync-status" id="syncStatusButton" aria-label="查看同步状态" aria-live="polite" aria-atomic="true" title="查看同步状态"><span class="sync-status-dot" aria-hidden="true"></span><span><strong id="syncStatusText">正在检查</strong><small id="syncStatusMeta">—</small></span></button>
           <button type="button" class="icon-control" id="adminTopToggle" aria-label="系统管理" title="系统管理"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg></button>
           <div class="account-summary"><span id="currentUserName">当前用户</span><button type="button" id="logoutButton">退出</button></div>
         </div>
       </div>
     </header>
 
-    <section id="dashboardView" class="business-view dashboard-view" hidden>
+    <section id="dashboardView" class="business-view dashboard-view" role="main" aria-labelledby="dashboardDateTitle" hidden>
       <div class="dashboard-grid">
         <section class="dashboard-panel dashboard-hero">
           <div class="dashboard-summary-head">
@@ -229,13 +229,13 @@
         <div class="section-head compact">
           <div>
             <h2>订单趋势</h2>
-            <p class="subtext" id="trendSubtitle">查看当前年份月度订单数量和订单金额。</p>
+            <p class="subtext" id="trendSubtitle" aria-live="polite">查看当前年份月度订单数量和订单金额。</p>
           </div>
           <div class="trend-controls" aria-label="趋势时间范围">
             <div class="range-switch" role="tablist" aria-label="趋势模式">
-              <button type="button" class="range-btn active" data-trend-mode="month">月</button>
-              <button type="button" class="range-btn" data-trend-mode="quarter">季</button>
-              <button type="button" class="range-btn" data-trend-mode="year">年</button>
+              <button type="button" class="range-btn active" data-trend-mode="month" role="tab" aria-selected="true" aria-controls="trendDataPanel">月</button>
+              <button type="button" class="range-btn" data-trend-mode="quarter" role="tab" aria-selected="false" aria-controls="trendDataPanel" tabindex="-1">季</button>
+              <button type="button" class="range-btn" data-trend-mode="year" role="tab" aria-selected="false" aria-controls="trendDataPanel" tabindex="-1">年</button>
             </div>
             <div class="trend-year-control" id="trendYearControl" aria-label="趋势年份">
               <button type="button" class="trend-year-btn" id="trendPrevYear" aria-label="上一年">‹</button>
@@ -258,7 +258,7 @@
             </div>
           </div>
         </div>
-        <div class="trend-body">
+        <div class="trend-body" id="trendDataPanel" role="tabpanel" aria-label="订单趋势数据">
           <aside class="trend-order-panel" aria-label="趋势范围订单">
             <div class="trend-order-head">
               <h3>范围订单</h3>
@@ -284,19 +284,19 @@
         <div class="dashboard-secondary-head">
           <div><h2>经营辅助</h2><p>按需查看分类构成或配送位置。</p></div>
           <div class="secondary-switch" role="tablist" aria-label="经营辅助视图">
-            <button type="button" class="secondary-tab active" data-dashboard-secondary="analysis" role="tab" aria-selected="true">分类分析</button>
-            <button type="button" class="secondary-tab" data-dashboard-secondary="map" role="tab" aria-selected="false">配送地图</button>
+            <button type="button" class="secondary-tab active" id="dashboardAnalysisTab" data-dashboard-secondary="analysis" role="tab" aria-selected="true" aria-controls="dashboardAnalysisPanel">分类分析</button>
+            <button type="button" class="secondary-tab" id="dashboardMapTab" data-dashboard-secondary="map" role="tab" aria-selected="false" aria-controls="dashboardMapPanel" tabindex="-1">配送地图</button>
           </div>
         </div>
-        <div id="dashboardAnalysisPanel" class="dashboard-secondary-panel">
+        <div id="dashboardAnalysisPanel" class="dashboard-secondary-panel" role="tabpanel" aria-labelledby="dashboardAnalysisTab">
           <div class="trend-pie-card" aria-label="订单分类金额饼图">
             <div class="trend-pie-head">
               <div><h3>分类金额</h3><p id="trendPieSubtitle">瓦片、配件、钢铁材料占比</p></div>
               <button type="button" class="trend-pie-toggle" id="trendPieTileToggle" aria-pressed="false" title="只显示瓦片数据">瓦</button>
             </div>
-            <div class="trend-tile-pie-controls" id="trendTilePieViewControls" aria-label="瓦片统计维度" hidden>
-              <button type="button" class="trend-tile-pie-btn active" data-trend-tile-pie-view="brand">品牌</button>
-              <button type="button" class="trend-tile-pie-btn" data-trend-tile-pie-view="color">颜色</button>
+            <div class="trend-tile-pie-controls" id="trendTilePieViewControls" role="group" aria-label="瓦片统计维度" hidden>
+              <button type="button" class="trend-tile-pie-btn active" data-trend-tile-pie-view="brand" aria-pressed="true">品牌</button>
+              <button type="button" class="trend-tile-pie-btn" data-trend-tile-pie-view="color" aria-pressed="false">颜色</button>
             </div>
             <div class="trend-pie-body">
               <svg id="orderPieChart" class="trend-pie-chart" viewBox="0 0 160 160" role="img" aria-label="订单分类金额饼图"></svg>
@@ -305,14 +305,14 @@
             <div class="empty-note trend-pie-empty" id="orderPieEmpty">暂无统计数据</div>
           </div>
         </div>
-        <div id="dashboardMapPanel" class="dashboard-secondary-panel" hidden>
+        <div id="dashboardMapPanel" class="dashboard-secondary-panel" role="tabpanel" aria-labelledby="dashboardMapTab" hidden>
       <section class="order-map-card" aria-label="订单位置地图">
         <div class="map-panel-head">
           <div>
             <h2>订单地图</h2>
             <p class="subtext" id="orderMapSubtitle">查看全部已定位订单。</p>
           </div>
-          <span class="map-status-pill" id="orderMapStatus">待配置</span>
+          <span class="map-status-pill" id="orderMapStatus" role="status" aria-live="polite">待配置</span>
         </div>
         <div class="order-map-wrap">
           <div id="orderLocationMap" class="order-map" role="img" aria-label="出货订单位置地图"></div>
@@ -331,7 +331,7 @@
       <div class="title-row">
         <div class="title-block">
           <p class="eyebrow">MATERIAL ORDER · 录单工作台</p>
-          <h1>订单基础信息</h1>
+          <h1 id="shippingTitle">订单基础信息</h1>
           <p>主瓦、配件、钢铁材料和特殊瓦统一核算</p>
         </div>
         <div class="quick-facts" aria-label="固定参数">
@@ -343,11 +343,11 @@
       <div class="settings-grid settings-grid-core">
         <div class="field">
           <label for="orderDate">订单日期</label>
-          <input id="orderDate" type="date" />
+          <input id="orderDate" type="date" required />
         </div>
         <div class="field">
           <label for="customerName">客户姓名</label>
-          <input id="customerName" type="text" autocomplete="off" />
+          <input id="customerName" type="text" autocomplete="off" maxlength="120" required />
         </div>
         <div class="field">
           <label for="tileColor">颜色</label>
@@ -360,7 +360,7 @@
         </div>
         <div class="field">
           <label for="unitPrice">主瓦单价（元/㎡）</label>
-          <input id="unitPrice" type="number" inputmode="decimal" step="0.01" />
+          <input id="unitPrice" type="number" inputmode="decimal" step="0.01" min="0.01" />
         </div>
         <div class="field">
           <label for="deliveryMethod">配送方式</label>
@@ -386,21 +386,23 @@
         </div>
       </details>
 
+      <div class="order-validation-summary" id="orderValidationSummary" role="alert" aria-live="assertive" tabindex="-1" hidden></div>
+
       <datalist id="unitOptions"></datalist>
     </header>
 
     <div class="actions-row">
-      <nav class="tabbar" aria-label="出货模块">
-        <button type="button" class="nav-tab active" data-target="mainPanel"><span class="nav-tab-index">01</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>主瓦计算</span></button>
-        <button type="button" class="nav-tab" data-target="accessoryPanel"><span class="nav-tab-index">02</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-parts"></use></svg><span>配件清单</span></button>
-        <button type="button" class="nav-tab" data-target="steelPanel"><span class="nav-tab-index">03</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-steel"></use></svg><span>钢铁材料</span></button>
-        <button type="button" class="nav-tab" data-target="otherTilePanel"><span class="nav-tab-index">04</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg><span>其他瓦</span></button>
+      <nav class="tabbar" role="tablist" aria-label="出货模块">
+        <button type="button" class="nav-tab active" id="mainPanelTab" data-target="mainPanel" role="tab" aria-selected="true" aria-controls="mainPanel"><span class="nav-tab-index">01</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-roof"></use></svg><span>主瓦计算</span></button>
+        <button type="button" class="nav-tab" id="accessoryPanelTab" data-target="accessoryPanel" role="tab" aria-selected="false" aria-controls="accessoryPanel" tabindex="-1"><span class="nav-tab-index">02</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-parts"></use></svg><span>配件清单</span></button>
+        <button type="button" class="nav-tab" id="steelPanelTab" data-target="steelPanel" role="tab" aria-selected="false" aria-controls="steelPanel" tabindex="-1"><span class="nav-tab-index">03</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-steel"></use></svg><span>钢铁材料</span></button>
+        <button type="button" class="nav-tab" id="otherTilePanelTab" data-target="otherTilePanel" role="tab" aria-selected="false" aria-controls="otherTilePanel" tabindex="-1"><span class="nav-tab-index">04</span><svg class="ui-icon" aria-hidden="true"><use href="#icon-layers"></use></svg><span>其他瓦</span></button>
       </nav>
     </div>
 
     <div class="main-layout">
-      <main class="workbench" id="content">
-        <section class="panel active" id="mainPanel">
+      <main class="workbench" id="content" aria-labelledby="shippingTitle">
+        <section class="panel active" id="mainPanel" role="tabpanel" aria-labelledby="mainPanelTab">
           <div class="section-head">
             <div>
               <h2>主瓦计算</h2>
@@ -413,7 +415,7 @@
           <div class="empty-note">暂无主瓦数据</div>
         </section>
 
-        <section class="panel" id="accessoryPanel">
+        <section class="panel" id="accessoryPanel" role="tabpanel" aria-labelledby="accessoryPanelTab" hidden>
           <div class="section-head">
             <div>
               <h2>配件清单</h2>
@@ -442,7 +444,7 @@
           <div class="panel-total">配件总金额：<strong id="accAmountInline">0.00</strong> 元</div>
         </section>
 
-        <section class="panel" id="steelPanel">
+        <section class="panel" id="steelPanel" role="tabpanel" aria-labelledby="steelPanelTab" hidden>
           <div class="section-head">
             <div>
               <h2>钢铁材料</h2>
@@ -482,7 +484,7 @@
           <div class="panel-total">钢铁材料金额：<strong id="steelAmount">0.00</strong> 元</div>
         </section>
 
-        <section class="panel" id="otherTilePanel">
+        <section class="panel" id="otherTilePanel" role="tabpanel" aria-labelledby="otherTilePanelTab" hidden>
           <div class="section-head">
             <div>
               <h2>其他瓦 / 特殊瓦</h2>
@@ -552,12 +554,12 @@
     </div>
     </section>
 
-    <section id="historyView" class="business-view history-view" hidden>
+    <section id="historyView" class="business-view history-view" role="main" aria-labelledby="historyTitle" hidden>
       <header class="app-header">
         <div class="title-row">
           <div class="title-block">
             <p class="eyebrow">ORDER LEDGER · 订单台账</p>
-            <h1>订单详细</h1>
+            <h1 id="historyTitle">订单详细</h1>
             <p>按日期、客户名称或位置查找订单。</p>
           </div>
         </div>
@@ -606,19 +608,21 @@
           <div class="section-head compact">
             <div>
               <h2>订单列表</h2>
-              <p class="subtext" id="historyCountText">共 0 条记录</p>
+              <p class="subtext" id="historyCountText" role="status" aria-live="polite">共 0 条记录</p>
             </div>
           </div>
           <div class="history-table-wrap">
             <table class="history-table">
+              <caption class="sr-only">订单记录列表</caption>
               <thead>
                 <tr>
-                  <th>日期</th>
-                  <th>客户</th>
-                  <th>位置</th>
-                  <th>金额</th>
-                  <th>面积</th>
-                  <th>操作</th>
+                  <th scope="col">日期</th>
+                  <th scope="col">客户</th>
+                  <th scope="col">位置</th>
+                  <th scope="col">金额</th>
+                  <th scope="col">面积</th>
+                  <th scope="col">操作人</th>
+                  <th scope="col">操作</th>
                 </tr>
               </thead>
               <tbody id="historyTableBody"></tbody>
@@ -627,12 +631,12 @@
           <div class="empty-note" id="historyEmpty">暂无符合条件的订单</div>
           <div class="history-pagination" id="historyPagination" hidden>
             <button type="button" class="btn btn-neutral compact-btn" id="historyPrevPage">上一页</button>
-            <span id="historyPageInfo">第 1 / 1 页，共 0 条</span>
+            <span id="historyPageInfo" role="status" aria-live="polite">第 1 / 1 页，共 0 条</span>
             <button type="button" class="btn btn-neutral compact-btn" id="historyNextPage">下一页</button>
           </div>
         </section>
 
-        <aside class="record-detail" id="recordDetail" hidden>
+        <aside class="record-detail" id="recordDetail" role="dialog" aria-labelledby="recordDetailTitle" aria-describedby="recordDetailSubtitle" tabindex="-1" hidden>
           <div class="section-head compact">
             <div>
               <h2 id="recordDetailTitle">订单详情</h2>
@@ -650,17 +654,17 @@
         <div class="title-row">
           <div class="title-block">
             <p class="eyebrow">SYSTEM CONTROL · 参数中心</p>
-            <h1>系统管理</h1>
+            <h1 id="adminTitle">系统管理</h1>
             <p>维护出货单参数、预设清单和打印报表模板</p>
           </div>
           <button type="button" class="btn btn-neutral" id="backToShipping"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg><span>返回出货单</span></button>
         </div>
       </header>
-      <main class="admin-root" id="adminRoot"></main>
+      <main class="admin-root" id="adminRoot" aria-labelledby="adminTitle"></main>
     </section>
   </div>
 
-  <div class="image-lightbox" id="mapImageLightbox" role="dialog" aria-modal="true" aria-label="地图展示图片预览" hidden>
+  <div class="image-lightbox" id="mapImageLightbox" role="dialog" aria-modal="true" aria-label="地图展示图片预览" aria-describedby="mapImageLightboxCaption" tabindex="-1" hidden>
     <button type="button" class="image-lightbox-close" id="mapImageLightboxClose" aria-label="关闭图片预览"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clear"></use></svg></button>
     <figure class="image-lightbox-frame">
       <img id="mapImageLightboxImg" alt="地图展示图片预览" />
@@ -668,7 +672,7 @@
     </figure>
   </div>
 
-  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true" aria-relevant="additions text"></div>
   <dialog class="app-confirm" id="appConfirmDialog" aria-labelledby="appConfirmTitle" aria-describedby="appConfirmMessage">
     <form method="dialog" class="app-confirm-card">
       <div class="app-confirm-icon" aria-hidden="true"><svg class="ui-icon"><use href="#icon-trash"></use></svg></div>

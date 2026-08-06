@@ -98,6 +98,91 @@ export function hasWorkingDraftContent(draft) {
   });
 }
 
+function validationText(value) {
+  return String(value === null || value === undefined ? "" : value).trim();
+}
+
+function isPositiveInput(value) {
+  var number = Number(value);
+  return validationText(value) !== "" && Number.isFinite(number) && number > 0;
+}
+
+function isValidDateInput(value) {
+  var text = validationText(value);
+  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return false;
+  var year = Number(match[1]);
+  var month = Number(match[2]);
+  var day = Number(match[3]);
+  var date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function addValidationError(errors, path, message) {
+  errors.push({ path: path, message: message });
+}
+
+function validatePricedRows(errors, rows, pathName, label, withLength) {
+  (Array.isArray(rows) ? rows : []).forEach(function (row, index) {
+    var source = row || {};
+    var prefix = pathName + "." + index + ".";
+    if (!validationText(source.name)) addValidationError(errors, prefix + "name", label + "第 " + (index + 1) + " 行缺少名称");
+    if (!isPositiveInput(source.quantity)) addValidationError(errors, prefix + "quantity", label + "第 " + (index + 1) + " 行数量必须大于 0");
+    if (!validationText(source.unit)) addValidationError(errors, prefix + "unit", label + "第 " + (index + 1) + " 行缺少单位");
+    if (!isPositiveInput(source.price)) addValidationError(errors, prefix + "price", label + "第 " + (index + 1) + " 行单价必须大于 0");
+    if (withLength && !isPositiveInput(source.length)) {
+      addValidationError(errors, prefix + "length", label + "第 " + (index + 1) + " 行单片长度必须大于 0");
+    }
+  });
+}
+
+export function validateWorkingOrder(draft) {
+  var source = draft && typeof draft === "object" ? draft : {};
+  var order = source.order && typeof source.order === "object" ? source.order : {};
+  var mainTile = source.mainTile && typeof source.mainTile === "object" ? source.mainTile : {};
+  var mainRows = Array.isArray(source.mainRows) ? source.mainRows : [];
+  var accessories = Array.isArray(source.accessories) ? source.accessories : [];
+  var steels = Array.isArray(source.steels) ? source.steels : [];
+  var otherTiles = Array.isArray(source.otherTiles) ? source.otherTiles : [];
+  var errors = [];
+
+  if (!isValidDateInput(order.orderDate)) addValidationError(errors, "order.orderDate", "请选择有效的订单日期");
+  if (!validationText(order.customerName)) addValidationError(errors, "order.customerName", "请填写客户姓名");
+  else if (validationText(order.customerName).length > 120) addValidationError(errors, "order.customerName", "客户姓名不能超过 120 个字符");
+
+  mainRows.forEach(function (row, index) {
+    var sourceRow = row || {};
+    var prefix = "mainRows." + index + ".";
+    var segmentCount = validationText(sourceRow.segmentCount);
+    var projectionLength = validationText(sourceRow.projectionLength);
+    var slopeValue = validationText(sourceRow.slopeValue);
+    if (segmentCount) {
+      if (!isPositiveInput(segmentCount)) addValidationError(errors, prefix + "segmentCount", "主瓦第 " + (index + 1) + " 行节数必须大于 0");
+      if (!isPositiveInput(mainTile.segmentLength)) addValidationError(errors, "mainTile.segmentLength", "主瓦按节数录入时，节长必须大于 0");
+    } else if (projectionLength || slopeValue) {
+      if (!isPositiveInput(projectionLength)) addValidationError(errors, prefix + "projectionLength", "主瓦第 " + (index + 1) + " 行水平投影必须大于 0");
+      var slopeNumber = Number(slopeValue);
+      var slopeValid = slopeValue !== "" && Number.isFinite(slopeNumber) && slopeNumber >= 0 && (sourceRow.slopeMode !== "angle" || slopeNumber < 90);
+      if (!slopeValid) addValidationError(errors, prefix + "slopeValue", "主瓦第 " + (index + 1) + " 行坡度或角度不正确");
+    } else if (!isPositiveInput(sourceRow.length)) {
+      addValidationError(errors, prefix + "length", "主瓦第 " + (index + 1) + " 行长度必须大于 0");
+    }
+    if (!isPositiveInput(sourceRow.quantity)) addValidationError(errors, prefix + "quantity", "主瓦第 " + (index + 1) + " 行数量必须大于 0");
+  });
+
+  if (mainRows.length && !isPositiveInput(mainTile.unitPrice)) {
+    addValidationError(errors, "mainTile.unitPrice", "主瓦单价必须大于 0");
+  }
+  validatePricedRows(errors, accessories, "accessories", "配件", false);
+  validatePricedRows(errors, steels, "steels", "钢铁材料", false);
+  validatePricedRows(errors, otherTiles, "otherTiles", "其他瓦", true);
+
+  if (!mainRows.length && !accessories.length && !steels.length && !otherTiles.length) {
+    addValidationError(errors, "items", "请至少录入一条主瓦、配件、钢铁材料或其他瓦明细");
+  }
+  return { valid: errors.length === 0, errors: errors };
+}
+
 function getDisplayName(item) {
   if (!item) return "";
   return [item.name, item.spec].filter(Boolean).join(" ").trim();
@@ -154,6 +239,8 @@ export function initShippingPage(options) {
   var fixedWidthFact = document.getElementById("fixedWidthFact");
   var defaultSegmentFact = document.getElementById("defaultSegmentFact");
   var fixedWidthDisplay = document.getElementById("fixedWidthDisplay");
+  var shippingView = document.getElementById("shippingView");
+  var validationSummaryEl = document.getElementById("orderValidationSummary");
   var reportLogoDataUrl = "";
   var cuttingAdviceBtn = null;
   var cuttingAdvicePanel = null;
@@ -176,6 +263,103 @@ export function initShippingPage(options) {
 
   function iconSvg(name) {
     return '<svg class="ui-icon" aria-hidden="true"><use href="#icon-' + name + '"></use></svg>';
+  }
+
+  function activeRows(root, rowSelector, valueSelectors) {
+    return Array.prototype.slice.call(root.querySelectorAll(rowSelector)).filter(function (row) {
+      return valueSelectors.some(function (selector) { return readElementValue(row, selector).trim(); });
+    });
+  }
+
+  function clearOrderValidation() {
+    if (shippingView) {
+      Array.prototype.slice.call(shippingView.querySelectorAll("[aria-invalid='true']")).forEach(function (element) {
+        element.removeAttribute("aria-invalid");
+        if (element.getAttribute("aria-describedby") === "orderValidationSummary") element.removeAttribute("aria-describedby");
+        if (typeof element.setCustomValidity === "function") element.setCustomValidity("");
+      });
+    }
+    if (validationSummaryEl) {
+      validationSummaryEl.hidden = true;
+      validationSummaryEl.innerHTML = "";
+    }
+  }
+
+  function findValidationElement(path) {
+    var fixed = {
+      "order.orderDate": orderDateInput,
+      "order.customerName": customerNameInput,
+      "mainTile.segmentLength": globalSegmentInput,
+      "mainTile.unitPrice": unitPriceInput,
+      items: addMainRowBtn
+    };
+    if (fixed[path]) return fixed[path];
+    var definitions = {
+      mainRows: {
+        root: rowsEl,
+        row: ".calc-row",
+        active: [".inp-proj", ".inp-slope-value", ".inp-l", ".inp-seg", ".inp-q"],
+        fields: { projectionLength: ".inp-proj", slopeValue: ".inp-slope-value", length: ".inp-l", segmentCount: ".inp-seg", quantity: ".inp-q" }
+      },
+      accessories: {
+        root: accessoryRowsEl,
+        row: ".acc-row",
+        active: [".acc-name", ".acc-qty", ".acc-price"],
+        fields: { name: ".acc-name", quantity: ".acc-qty", unit: ".acc-unit", price: ".acc-price" }
+      },
+      steels: {
+        root: steelRowsEl,
+        row: ".steel-row",
+        active: [".steel-name", ".steel-qty", ".steel-price"],
+        fields: { name: ".steel-name", quantity: ".steel-qty", unit: ".steel-unit", price: ".steel-price" }
+      },
+      otherTiles: {
+        root: otherTileRowsEl,
+        row: ".other-row",
+        active: [".other-tile-name", ".other-tile-length", ".other-tile-qty", ".other-tile-price"],
+        fields: { name: ".other-tile-name", length: ".other-tile-length", quantity: ".other-tile-qty", unit: ".other-tile-unit", price: ".other-tile-price" }
+      }
+    };
+    var match = /^(mainRows|accessories|steels|otherTiles)\.(\d+)\.([A-Za-z]+)$/.exec(path);
+    if (!match) return null;
+    var definition = definitions[match[1]];
+    var rows = activeRows(definition.root, definition.row, definition.active);
+    var row = rows[Number(match[2])];
+    return row && definition.fields[match[3]] ? row.querySelector(definition.fields[match[3]]) : null;
+  }
+
+  function showOrderValidation(result) {
+    clearOrderValidation();
+    if (result.valid) return result;
+    var firstElement = null;
+    result.errors.forEach(function (error) {
+      var element = findValidationElement(error.path);
+      if (!element) return;
+      element.setAttribute("aria-invalid", "true");
+      element.setAttribute("aria-describedby", "orderValidationSummary");
+      if (typeof element.setCustomValidity === "function") element.setCustomValidity(error.message);
+      if (!firstElement) firstElement = element;
+    });
+    if (validationSummaryEl) {
+      validationSummaryEl.hidden = false;
+      validationSummaryEl.innerHTML = "<strong>订单尚不能保存</strong><ul>" + result.errors.map(function (error) {
+        return "<li>" + escapeHtml(error.message) + "</li>";
+      }).join("") + "</ul>";
+    }
+    if (firstElement) {
+      var panel = firstElement.closest && firstElement.closest(".panel");
+      if (panel && !panel.classList.contains("active")) switchPanel(panel.id);
+      firstElement.scrollIntoView({ behavior: shouldReduceMotion() ? "auto" : "smooth", block: "center" });
+      if (typeof firstElement.focus === "function") firstElement.focus({ preventScroll: true });
+    } else if (validationSummaryEl) {
+      validationSummaryEl.scrollIntoView({ behavior: shouldReduceMotion() ? "auto" : "smooth", block: "center" });
+      validationSummaryEl.focus({ preventScroll: true });
+    }
+    return result;
+  }
+
+  function validateOrder() {
+    return showOrderValidation(validateWorkingOrder(captureWorkingDraft()));
   }
 
   function appendAnimatedRow(container, row) {
@@ -367,8 +551,8 @@ export function initShippingPage(options) {
       '<label class="line-field"><span class="field-label">换算方式</span><select class="inp-slope-mode"><option value="percent">坡度 %</option><option value="angle">角度 °</option></select></label>' +
       '<label class="line-field"><span class="field-label">坡度/角度</span><input class="inp-slope-value" type="text" inputmode="decimal" /></label>' +
       '<label class="line-field"><span class="field-label">长度 L（米）</span><input class="inp-l" type="text" inputmode="decimal" /></label>' +
-      '<label class="line-field"><span class="field-label">节数</span><input class="inp-seg" type="number" inputmode="decimal" step="1" /></label>' +
-      '<label class="line-field"><span class="field-label">数量 Q</span><input class="inp-q" type="number" inputmode="decimal" step="1" /></label>' +
+      '<label class="line-field"><span class="field-label">节数</span><input class="inp-seg" type="number" inputmode="decimal" step="1" min="1" /></label>' +
+      '<label class="line-field"><span class="field-label">数量 Q</span><input class="inp-q" type="number" inputmode="decimal" step="1" min="1" /></label>' +
       '<div class="metric"><span>斜边长度</span><strong class="out-slope-length">—</strong></div>' +
       '<div class="metric"><span>精准节数</span><strong class="out-precise">—</strong></div>' +
       '<div class="metric"><span>实裁节数</span><strong class="out-actual">—</strong></div>' +
@@ -470,9 +654,9 @@ export function initShippingPage(options) {
     if (highlight) row.classList.add("is-new");
     row.innerHTML =
       '<label class="line-field"><span class="field-label">名称</span><input class="acc-name" type="text" value="' + escapeHtml(name) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">数量</span><input class="acc-qty" type="number" inputmode="decimal" step="1" /></label>' +
+      '<label class="line-field"><span class="field-label">数量</span><input class="acc-qty" type="number" inputmode="decimal" step="1" min="0.0001" /></label>' +
       '<label class="line-field"><span class="field-label">单位</span><input class="acc-unit" type="text" list="unitOptions" value="' + escapeHtml(defaultUnit) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">单价</span><input class="acc-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item, { blankZero: true })) + '" /></label>' +
+      '<label class="line-field"><span class="field-label">单价</span><input class="acc-price" type="number" inputmode="decimal" step="0.01" min="0.01" value="' + escapeHtml(formatInputPrice(item, { blankZero: true })) + '" /></label>' +
       '<div class="subtotal-box"><span>小计</span><output class="acc-subtotal">—</output></div>' +
       '<button type="button" class="icon-btn acc-del" title="删除配件" aria-label="删除配件">' + iconSvg("trash") + '</button>';
     return row;
@@ -518,9 +702,9 @@ export function initShippingPage(options) {
     row.className = "line-row steel-row";
     row.innerHTML =
       '<label class="line-field"><span class="field-label">名称</span><input class="steel-name" type="text" value="' + escapeHtml(name) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">数量</span><input class="steel-qty" type="number" inputmode="decimal" step="1" /></label>' +
+      '<label class="line-field"><span class="field-label">数量</span><input class="steel-qty" type="number" inputmode="decimal" step="1" min="0.0001" /></label>' +
       '<label class="line-field"><span class="field-label">单位</span><input class="steel-unit" type="text" list="unitOptions" value="' + escapeHtml(finalUnit) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">单价</span><input class="steel-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item, { blankZero: true })) + '" /></label>' +
+      '<label class="line-field"><span class="field-label">单价</span><input class="steel-price" type="number" inputmode="decimal" step="0.01" min="0.01" value="' + escapeHtml(formatInputPrice(item, { blankZero: true })) + '" /></label>' +
       '<div class="subtotal-box"><span>小计</span><output class="steel-subtotal">—</output></div>' +
       '<button type="button" class="icon-btn steel-del" title="删除材料" aria-label="删除材料">' + iconSvg("trash") + '</button>';
     return row;
@@ -562,11 +746,11 @@ export function initShippingPage(options) {
     row.className = "line-row other-row";
     row.innerHTML =
       '<label class="line-field"><span class="field-label">名称</span><input class="other-tile-name" type="text" value="' + escapeHtml(name) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">单片长度</span><input class="other-tile-length" type="number" inputmode="decimal" step="0.001" /></label>' +
-      '<label class="line-field"><span class="field-label">片数</span><input class="other-tile-qty" type="number" inputmode="decimal" step="1" /></label>' +
+      '<label class="line-field"><span class="field-label">单片长度</span><input class="other-tile-length" type="number" inputmode="decimal" step="0.001" min="0.0001" /></label>' +
+      '<label class="line-field"><span class="field-label">片数</span><input class="other-tile-qty" type="number" inputmode="decimal" step="1" min="0.0001" /></label>' +
       '<div class="subtotal-box other-tile-total-length-box"><span>总长度</span><output class="other-tile-total-length">—</output></div>' +
       '<label class="line-field"><span class="field-label">单位</span><input class="other-tile-unit" type="text" list="unitOptions" value="' + escapeHtml(defaultUnit) + '" /></label>' +
-      '<label class="line-field"><span class="field-label">单价</span><input class="other-tile-price" type="number" inputmode="decimal" step="0.01" value="' + escapeHtml(formatInputPrice(item)) + '" /></label>' +
+      '<label class="line-field"><span class="field-label">单价</span><input class="other-tile-price" type="number" inputmode="decimal" step="0.01" min="0.01" value="' + escapeHtml(formatInputPrice(item)) + '" /></label>' +
       '<div class="subtotal-box"><span>小计</span><output class="other-tile-subtotal">—</output></div>' +
       '<button type="button" class="icon-btn other-tile-del" title="删除其他瓦" aria-label="删除其他瓦">' + iconSvg("trash") + '</button>';
     return row;
@@ -614,21 +798,39 @@ export function initShippingPage(options) {
       var active = button.getAttribute("data-target") === targetId;
       button.classList.toggle("active", active);
       button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
     });
     panels.forEach(function (panel) {
       var active = panel.id === targetId;
       panel.classList.toggle("active", active);
+      panel.hidden = !active;
       if (active) enterElement(panel);
     });
+  }
+
+  function handlePanelTabKeydown(event) {
+    var keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+    if (keys.indexOf(event.key) === -1) return;
+    var tabs = Array.prototype.slice.call(navTabs);
+    var currentIndex = tabs.indexOf(event.currentTarget);
+    if (currentIndex < 0) return;
+    event.preventDefault();
+    var nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 :
+      (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    var nextTab = tabs[nextIndex];
+    switchPanel(nextTab.getAttribute("data-target"));
+    nextTab.focus();
   }
 
   function addPresetButton(name, targetEl, onSelect) {
     var button = document.createElement("button");
     button.type = "button";
     button.className = "preset-btn";
+    button.setAttribute("aria-pressed", "false");
     button.innerHTML = "<span>" + escapeHtml(name) + "</span><small>已加</small>";
     button.addEventListener("click", function () {
       button.classList.add("selected");
+      button.setAttribute("aria-pressed", "true");
       onSelect(name);
     });
     targetEl.appendChild(button);
@@ -638,6 +840,7 @@ export function initShippingPage(options) {
     if (!container) return;
     Array.prototype.slice.call(container.querySelectorAll(".preset-btn")).forEach(function (button) {
       button.classList.remove("selected");
+      button.setAttribute("aria-pressed", "false");
     });
   }
 
@@ -752,6 +955,7 @@ export function initShippingPage(options) {
   }
 
   function restoreWorkingDraft(draft) {
+    clearOrderValidation();
     var source = draft && typeof draft === "object" ? draft : {};
     var order = source.order && typeof source.order === "object" ? source.order : {};
     var mainTile = source.mainTile && typeof source.mainTile === "object" ? source.mainTile : {};
@@ -835,6 +1039,7 @@ export function initShippingPage(options) {
   }
 
   function resetWorkingForm() {
+    clearOrderValidation();
     var defaultPrice = Number(currentConfig.basics.mainTileDefaultPrice);
     if (orderDateInput) orderDateInput.value = getDateOnly(new Date());
     [customerNameInput, tileColorInput, steelCategoryInput, deliveryAddressInput, completionMonthInput, orderRemarkInput].forEach(function (input) {
@@ -1413,6 +1618,7 @@ export function initShippingPage(options) {
     button.addEventListener("click", function () {
       switchPanel(button.getAttribute("data-target"));
     });
+    button.addEventListener("keydown", handlePanelTabKeydown);
   });
 
   setupCuttingAdviceUi();
@@ -1485,6 +1691,10 @@ export function initShippingPage(options) {
   applyConfig(currentConfig, { initial: true });
   ensureOrderDate();
   setupRowEventDelegation();
+  if (shippingView) {
+    shippingView.addEventListener("input", clearOrderValidation);
+    shippingView.addEventListener("change", clearOrderValidation);
+  }
   appendRows(12);
   setupNumberWheelGuard();
   ensureTrailingBlankRow();
@@ -1494,6 +1704,7 @@ export function initShippingPage(options) {
   return {
     applyConfig: applyConfig,
     createOrderDraft: buildOrderDraft,
+    validateOrder: validateOrder,
     captureWorkingDraft: captureWorkingDraft,
     restoreWorkingDraft: restoreWorkingDraft,
     resetWorkingForm: resetWorkingForm,

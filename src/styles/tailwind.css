@@ -37,7 +37,7 @@
 
   body {
     @apply m-0 min-h-dvh bg-app-bg font-sans text-app-text antialiased;
-    background: #f4f6f5;
+    background: #f7f5ef;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0;
     text-rendering: optimizeLegibility;
@@ -290,15 +290,6 @@
   .password-toggle:hover,
   .password-toggle[aria-pressed="true"] {
     @apply border-app-line bg-app-surface-soft text-app-primary-dark;
-  }
-
-  button:focus-visible,
-  .preset-btn:focus-visible,
-  .nav-tab:focus-visible,
-  .btn:focus-visible,
-  .icon-btn:focus-visible,
-  .password-toggle:focus-visible {
-    @apply outline outline-[3px] outline-offset-2 outline-app-primary/25;
   }
 
   .readonly-value {
@@ -2132,16 +2123,6 @@
     box-shadow: none;
   }
 
-  button:focus-visible,
-  .preset-btn:focus-visible,
-  .nav-tab:focus-visible,
-  .btn:focus-visible,
-  .icon-btn:focus-visible,
-  .password-toggle:focus-visible {
-    outline: 3px solid rgba(197, 164, 93, 0.38);
-    outline-offset: 2px;
-  }
-
   .actions-row {
     @apply my-4 gap-2.5;
   }
@@ -2933,10 +2914,10 @@
 }
 
 @layer components {
-  /* Compact graphite-green ERP shell. This final layer owns all new workbench components. */
+  /* Compact ERP component foundations retained for shared layout behavior. */
   body {
     color: #17211e;
-    background: #f4f6f5;
+    background: #f7f5ef;
   }
 
   .app-shell {
@@ -3085,8 +3066,8 @@
     width: 0.5rem;
     height: 0.5rem;
     border-radius: 50%;
-    background: #2f7d63;
-    box-shadow: 0 0 0 3px rgba(47, 125, 99, 0.12);
+    background: #8c6a2f;
+    box-shadow: 0 0 0 3px rgba(140, 106, 47, 0.14);
   }
 
   .sync-status[data-state="local-only"] .sync-status-dot { background: #66736f; box-shadow: 0 0 0 3px rgba(102, 115, 111, 0.12); }
@@ -3178,7 +3159,6 @@
     box-shadow: none;
   }
 
-  .dashboard-hero .metric-card:last-child { border-right: 0; }
   .dashboard-hero .metric-card strong { color: #17211e; font-size: clamp(1.35rem, 2vw, 2rem); }
 
   .dashboard-lifetime {
@@ -3343,8 +3323,6 @@
     .workspace-tabs { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
     .workspace-controls { grid-column: 2; grid-row: 1; }
     .dashboard-hero { grid-template-columns: 1fr; }
-    .settings-grid-core { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .history-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
 
   @media (max-width: 759px) {
@@ -3357,36 +3335,25 @@
     .sync-status { grid-template-columns: 0.55rem auto; padding-inline: 0.55rem; }
     .workspace-tabs { order: 3; width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
     .workspace-tab { padding-inline: 0.4rem; font-size: 0.76rem; }
-    .workspace-tab .ui-icon { display: none; }
     .dashboard-hero { padding: 0.9rem; }
     .dashboard-hero .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .dashboard-hero .metric-card { min-height: 5.8rem; border-right: 1px solid #d9e1de; border-bottom: 1px solid #d9e1de; }
     .dashboard-hero .metric-card:nth-child(2n) { border-right: 0; }
     .dashboard-hero .metric-card:nth-last-child(-n+2) { border-bottom: 0; }
     .dashboard-lifetime { justify-content: flex-start; flex-wrap: wrap; gap: 0.5rem 1rem; }
-    .trend-body { grid-template-columns: 1fr; }
     .trend-order-panel { order: 2; }
     .dashboard-secondary-head { align-items: flex-start; flex-direction: column; }
     .secondary-switch { width: 100%; }
     .secondary-tab { flex: 1; }
     .settings-grid-core, .settings-grid-advanced { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .settings-grid-advanced .span-3 { grid-column: 1 / -1; }
-    .main-layout { grid-template-columns: 1fr; }
     .summary-panel { position: fixed; left: 0.7rem; right: 0.7rem; bottom: 0.6rem; top: auto; z-index: 25; padding: 0.55rem; border-radius: 12px; box-shadow: 0 18px 46px -24px rgba(33, 29, 22, 0.48); }
     .summary-panel h2, .summary-lines { display: none; }
-    .summary-actions { grid-template-columns: 1fr 1fr; }
-    .draft-tools { margin-top: 0; padding-top: 0; border-top: 0; }
-    .draft-status { display: none; }
     .calc-list, .line-list { border: 0; background: transparent; overflow: visible; }
-    .line-column-head { display: none; }
     .line-row .field-label, .line-row .subtotal-box span { display: block; }
     .calc-row, .line-row, .calc-row:hover, .line-row:hover { margin-bottom: 0.65rem; border: 1px solid #d9e1de; border-radius: 11px; box-shadow: none; }
-    .history-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .history-filters .btn { grid-column: 1 / -1; }
-    .admin-workspace { grid-template-columns: 1fr; }
-    .admin-category-nav { position: static; display: flex; overflow-x: auto; }
     .admin-category-btn { flex: 0 0 auto; min-height: 2.4rem; white-space: nowrap; }
-    .toast-region { top: 0.75rem; }
   }
 
   /* Hongbo industrial material workbench. Keep this as the final visual owner. */
@@ -3402,7 +3369,8 @@
     --erp-pine-dark: #0f0e0c;
     --erp-pine-soft: #f3ead5;
     --erp-red: #c5a45d;
-    --erp-red-dark: #8c6a2f;
+    --erp-red-dark: #76551f;
+    --erp-focus: #76551f;
     --erp-line: #ddd7c9;
     --erp-line-strong: #c9bea9;
     --erp-warning: #8c6a2f;
@@ -3462,7 +3430,7 @@
   }
 
   .eyebrow {
-    color: var(--erp-red);
+    color: var(--erp-red-dark);
     font-family: Bahnschrift, "Segoe UI", sans-serif;
     font-size: 0.68rem;
     font-weight: 700;
@@ -3731,7 +3699,7 @@
 
   .workspace-tab-index,
   .nav-tab-index {
-    color: var(--erp-red);
+    color: var(--erp-red-dark);
     font-family: Bahnschrift, "Segoe UI", sans-serif;
     font-size: 0.61rem;
     font-weight: 700;
@@ -3766,10 +3734,10 @@
   .sync-status { padding: 0.35rem 0.85rem; }
   .sync-status strong { color: var(--erp-ink-soft); }
   .sync-status small { color: var(--erp-muted); }
-  .sync-status-dot { border-radius: 2px; background: #2f725d; box-shadow: none; }
+  .sync-status-dot { border-radius: 2px; background: var(--erp-red-dark); box-shadow: none; }
   .sync-status[data-state="local-pending"] .sync-status-dot { animation: statusPulse 1.4s ease-in-out infinite; }
   .icon-control { width: 2.9rem; color: var(--erp-muted); }
-  .icon-control:hover { color: var(--erp-red); border-color: var(--erp-line); background: rgba(255, 255, 255, 0.5); }
+  .icon-control:hover { color: var(--erp-red-dark); border-color: var(--erp-line); background: rgba(255, 255, 255, 0.5); }
 
   .account-summary {
     gap: 0.35rem;
@@ -3883,6 +3851,17 @@
   }
 
   .skip-link { color: var(--erp-ink); border: 1px solid var(--erp-ink); background: #fff; }
+
+  .app-shell:focus { outline: none; }
+
+  :where(a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 3px solid var(--erp-focus);
+    outline-offset: 3px;
+  }
+
+  :where(.business-view, .auth-view, .admin-view, [role="tabpanel"], [role="dialog"]) {
+    scroll-margin-top: 5.5rem;
+  }
 
   .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 18px -15px rgba(33, 29, 22, 0.46); }
   .btn:active,
@@ -4055,7 +4034,7 @@
 
   .order-advanced { border-color: var(--erp-line); }
   .order-advanced summary { min-height: 2.8rem; padding-top: 0.65rem; }
-  .order-advanced summary > span:last-child { color: var(--erp-red); }
+  .order-advanced summary > span:last-child { color: var(--erp-red-dark); }
   .order-advanced[open] .settings-grid-advanced { animation: industrialPanelIn var(--erp-normal) var(--erp-ease) both; }
 
   .actions-row {
@@ -4143,7 +4122,7 @@
     box-shadow: inset 3px 0 var(--erp-red);
   }
 
-  .row-index { border: 1px solid #c3d1ca; border-radius: 2px; color: var(--erp-pine); background: var(--erp-pine-soft); font-family: Bahnschrift, Consolas, monospace; }
+  .row-index { border: 1px solid #d8c79f; border-radius: 2px; color: var(--erp-pine); background: var(--erp-pine-soft); font-family: Bahnschrift, Consolas, monospace; }
   .metric,
   .subtotal-box { border-color: #dedfd7; border-radius: 2px; background: #f0efe8; }
   .metric strong,
@@ -4293,7 +4272,7 @@
   .app-confirm::backdrop { background: rgba(23, 22, 19, 0.48); }
   .app-confirm[open] .app-confirm-card { animation: industrialDialogIn var(--erp-normal) var(--erp-ease) both; }
   .app-confirm-card { border-color: var(--erp-line-strong); border-radius: 6px; background: var(--erp-surface); }
-  .app-confirm-icon { border-radius: 2px; color: var(--erp-red); background: #f7e7e5; }
+  .app-confirm-icon { border-radius: 2px; color: var(--erp-red-dark); background: #f7e7e5; }
 
   .motion-enter { animation: industrialViewIn 210ms var(--erp-ease) both; }
   .motion-row-enter { animation: industrialRowIn 160ms var(--erp-ease) both; }
@@ -4320,7 +4299,7 @@
 
   @keyframes industrialValuePulse {
     0% { color: inherit; transform: translate3d(0, 0, 0); }
-    42% { color: var(--erp-red); transform: translate3d(0, -2px, 0); }
+    42% { color: var(--erp-red-dark); transform: translate3d(0, -2px, 0); }
     100% { color: inherit; transform: translate3d(0, 0, 0); }
   }
 
@@ -4352,6 +4331,126 @@
   @keyframes statusPulse {
     0%, 100% { opacity: 0.55; }
     50% { opacity: 1; }
+  }
+
+  .order-validation-summary {
+    margin-top: 0.75rem;
+    border: 1px solid #d7b7b3;
+    border-left: 4px solid #a33a32;
+    padding: 0.8rem 0.9rem;
+    color: #6f251f;
+    background: #fffafa;
+  }
+
+  .order-validation-summary strong {
+    display: block;
+    font-size: 0.84rem;
+    font-weight: 900;
+  }
+
+  .order-validation-summary ul {
+    display: grid;
+    gap: 0.2rem;
+    margin: 0.45rem 0 0;
+    padding-left: 1.2rem;
+    font-size: 0.78rem;
+  }
+
+  .field input[aria-invalid="true"],
+  .field select[aria-invalid="true"],
+  .line-field input[aria-invalid="true"],
+  .line-field select[aria-invalid="true"] {
+    border-color: #a33a32 !important;
+    box-shadow: 0 0 0 3px rgba(163, 58, 50, 0.13) !important;
+  }
+
+  .record-edit-form input[readonly] {
+    color: var(--erp-muted);
+    background: var(--erp-paper);
+    cursor: default;
+  }
+
+  .audit-section .admin-section-head > div {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .audit-section .admin-section-head p {
+    margin: 0;
+    color: var(--erp-muted);
+    font-size: 0.8rem;
+  }
+
+  .audit-toolbar {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.8rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--erp-line);
+    color: var(--erp-muted);
+    font-size: 0.8rem;
+  }
+
+  .audit-toolbar .field {
+    width: min(100%, 16rem);
+  }
+
+  .audit-table {
+    min-width: 1040px;
+  }
+
+  .audit-table td {
+    vertical-align: top;
+  }
+
+  .audit-table td strong,
+  .audit-table td small {
+    display: block;
+  }
+
+  .audit-table td small {
+    margin-top: 0.15rem;
+    color: var(--erp-muted);
+    font-size: 0.7rem;
+  }
+
+  .audit-time,
+  .audit-target,
+  .audit-ip {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .audit-summary {
+    min-width: 20rem;
+    line-height: 1.65;
+  }
+
+  .audit-action {
+    display: inline-flex;
+    border: 1px solid var(--erp-line-strong);
+    padding: 0.22rem 0.45rem;
+    color: var(--erp-ink-soft);
+    background: var(--erp-paper);
+    font-size: 0.72rem;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+
+  .audit-action[data-action="ORDER_DELETE"] {
+    color: #7b2f2a;
+    border-color: #d7b7b3;
+    background: #fff4f3;
+  }
+
+  .audit-pagination {
+    margin-top: 0.8rem;
+  }
+
+  .audit-error {
+    color: #7b2f2a;
   }
 
   @media (max-width: 1119px) {
@@ -4436,6 +4535,40 @@
     .toast-region { top: 0.75rem; }
   }
 
+  @media (prefers-contrast: more) {
+    :root {
+      --erp-line: #9e9585;
+      --erp-line-strong: #71695c;
+    }
+
+    body { background-image: none; }
+    .subtext,
+    .field label,
+    .field > span,
+    .line-field .field-label { color: var(--erp-ink-soft); }
+  }
+
+  @media (forced-colors: active) {
+    :where(a[href], button, input, select, textarea, summary, [tabindex]):focus-visible {
+      outline: 3px solid CanvasText;
+    }
+
+    .workspace-tab.active,
+    .nav-tab.active,
+    .secondary-tab.active,
+    .admin-category-btn.active,
+    .preset-btn.selected {
+      border: 2px solid CanvasText;
+    }
+
+    .sync-status-dot,
+    .legend-dot,
+    .row-index {
+      border: 1px solid CanvasText;
+      forced-color-adjust: auto;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     *, *::before, *::after {
@@ -4459,6 +4592,7 @@
 
   .actions-row,
   .summary-actions,
+  .order-validation-summary,
   .admin-view,
   .icon-btn,
   .toolbar,

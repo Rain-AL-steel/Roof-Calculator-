@@ -113,6 +113,20 @@ function jsonResponse(payload) {
   });
 }
 
+function isOrderListRequest(url) {
+  return /\/api\/orders(?:\?|$)/.test(String(url || ""));
+}
+
+function errorJsonResponse(status, payload) {
+  return Promise.resolve({
+    ok: false,
+    status: status,
+    text: function () {
+      return Promise.resolve(JSON.stringify(payload));
+    }
+  });
+}
+
 beforeEach(function () {
   Object.defineProperty(globalThis, "localStorage", {
     value: createStorageMock(),
@@ -156,6 +170,17 @@ describe("order service", function () {
     expect(order.steelCategory).toBe("友发");
     expect(order.galvanizingProcess).toBe("双镀锌");
     expect(order.deliveryMethod).toBe("自提");
+  });
+
+  it("preserves created and updated operator snapshots", function () {
+    var order = normalizeOrder({
+      orderDate: "2026-08-04",
+      createdBy: { id: "user-1", username: "operator", displayName: "录单员" },
+      updatedBy: { id: "user-2", username: "admin", displayName: "管理员" }
+    });
+
+    expect(order.createdBy).toEqual({ id: "user-1", username: "operator", displayName: "录单员" });
+    expect(order.updatedBy).toEqual({ id: "user-2", username: "admin", displayName: "管理员" });
   });
 
   it("preserves saved main tile segment fields for future tile classification", function () {
@@ -669,10 +694,39 @@ describe("order service", function () {
 
     var orders = await loadOrdersWithApiFallback();
 
-    expect(requestedUrl).toBe("/api/orders");
+    expect(requestedUrl).toBe("/api/orders?page=1&pageSize=100");
     expect(orders).toHaveLength(1);
     expect(orders[0].id).toBe("api-a");
     expect(loadOrders()[0].id).toBe("api-a");
+  });
+
+  it("loads every server page before replacing the local order cache", async function () {
+    var requestedUrls = [];
+    var firstPageOrder = makeOrder("page-a", "2026-05-26", 100);
+    var secondPageOrder = makeOrder("page-b", "2026-05-25", 80);
+    useHttpApiRuntime(function (url) {
+      requestedUrls.push(url);
+      var page = new URL(url, "http://localhost").searchParams.get("page");
+      if (page === "1") {
+        return jsonResponse({
+          orders: [firstPageOrder],
+          pagination: { page: 1, pageSize: 100, total: 2, totalPages: 2 }
+        });
+      }
+      return jsonResponse({
+        orders: [secondPageOrder],
+        pagination: { page: 2, pageSize: 100, total: 2, totalPages: 2 }
+      });
+    });
+
+    var orders = await loadOrdersWithApiFallback();
+
+    expect(requestedUrls).toEqual([
+      "/api/orders?page=1&pageSize=100",
+      "/api/orders?page=2&pageSize=100"
+    ]);
+    expect(orders.map(function (order) { return order.id; })).toEqual(["page-a", "page-b"]);
+    expect(loadOrders()).toHaveLength(2);
   });
 
   it("keeps the API database id when an API order maps to an old local id", async function () {
@@ -704,7 +758,7 @@ describe("order service", function () {
 
     var orders = await loadOrdersWithApiFallback();
 
-    expect(requestedUrl).toBe("http://127.0.0.1:3001/api/orders");
+    expect(requestedUrl).toBe("http://127.0.0.1:3001/api/orders?page=1&pageSize=100");
     expect(orders[0].id).toBe("api-origin");
   });
 
@@ -949,7 +1003,7 @@ describe("order service", function () {
     var requestedUrl = "";
     var requestedMethod = "";
     useHttpApiRuntime(function (url, options) {
-      if (url === "/api/orders") return jsonResponse({ orders: [original] });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: [original] });
       var body = JSON.parse(options.body);
       requestedUrl = url;
       requestedMethod = options.method;
@@ -987,7 +1041,7 @@ describe("order service", function () {
     var requestedUrl = "";
     var requestedBody = null;
     useHttpApiRuntime(function (url, options) {
-      if (url === "/api/orders") return jsonResponse({ orders: [apiOrder] });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: [apiOrder] });
       requestedUrl = url;
       requestedBody = JSON.parse(options.body);
       return jsonResponse({ order: Object.assign({}, requestedBody, {
@@ -1037,6 +1091,22 @@ describe("order service", function () {
     expect(saved.pendingCount).toBe(1);
     expect(loadOrders()).toHaveLength(1);
     expect(loadOrders()[0].id).toBe("local-save");
+  });
+
+  it("does not queue orders rejected by server-side field validation", async function () {
+    useHttpApiRuntime(function () {
+      return errorJsonResponse(400, {
+        code: "INVALID_LINE_ITEM_PRICE",
+        message: "accessoryItems[0].price must be a positive number."
+      });
+    });
+
+    await expect(upsertOrderWithApiFallback(makeOrder("invalid-save", "2026-05-26", 100))).rejects.toMatchObject({
+      status: 400,
+      code: "INVALID_LINE_ITEM_PRICE"
+    });
+    expect(loadPendingOrderMutations()).toEqual([]);
+    expect(loadOrders()).toEqual([]);
   });
 
   it("preserves pending orders across server reads and syncs them when the API recovers", async function () {
@@ -1093,7 +1163,7 @@ describe("order service", function () {
     var requestedUrl = "";
     var requestedMethod = "";
     useHttpApiRuntime(function (url, options) {
-      if (url === "/api/orders") return jsonResponse({ orders: loadOrders() });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: loadOrders() });
       requestedUrl = url;
       requestedMethod = options.method;
       expect(loadOrders()).toHaveLength(1);
@@ -1115,7 +1185,7 @@ describe("order service", function () {
     });
     var requestedUrl = "";
     useHttpApiRuntime(function (url, options) {
-      if (url === "/api/orders") return jsonResponse({ orders: [apiOrder] });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: [apiOrder] });
       requestedUrl = url;
       expect(options.method).toBe("DELETE");
       return jsonResponse({ ok: true });
@@ -1137,7 +1207,7 @@ describe("order service", function () {
     upsertOrder(oldLocal);
     var requestedUrl = "";
     useHttpApiRuntime(function (url, options) {
-      if (url === "/api/orders") return jsonResponse({ orders: [apiOrder] });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: [apiOrder] });
       requestedUrl = url;
       expect(options.method).toBe("DELETE");
       return jsonResponse({ ok: true });
@@ -1163,7 +1233,7 @@ describe("order service", function () {
       warnCalls.push(Array.prototype.slice.call(arguments));
     };
     useHttpApiRuntime(function (url) {
-      if (url === "/api/orders") return jsonResponse({ orders: [apiOrder] });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: [apiOrder] });
       return Promise.reject(new Error("delete failed"));
     });
 
@@ -1222,7 +1292,7 @@ describe("order service", function () {
     upsertOrder(makeOrder("bulk-delete-b", "2026-05-26", 40));
     var deleteUrls = [];
     useHttpApiRuntime(function (url, options) {
-      if (url === "/api/orders") return jsonResponse({ orders: loadOrders() });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: loadOrders() });
       deleteUrls.push(url);
       expect(options.method).toBe("DELETE");
       expect(loadOrders().some(function (order) {
@@ -1251,7 +1321,7 @@ describe("order service", function () {
     ];
     var deleteUrls = [];
     useHttpApiRuntime(function (url, options) {
-      if (url === "/api/orders") return jsonResponse({ orders: apiOrders });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: apiOrders });
       deleteUrls.push(url);
       expect(options.method).toBe("DELETE");
       return jsonResponse({ ok: true });
@@ -1279,7 +1349,7 @@ describe("order service", function () {
       warnCalls.push(Array.prototype.slice.call(arguments));
     };
     useHttpApiRuntime(function (url, options) {
-      if (url === "/api/orders") return jsonResponse({ orders: loadOrders() });
+      if (isOrderListRequest(url)) return jsonResponse({ orders: loadOrders() });
       expect(options.method).toBe("DELETE");
       if (url === "/api/orders/bulk-delete-fail") return Promise.reject(new Error("delete failed"));
       return jsonResponse({ ok: true });

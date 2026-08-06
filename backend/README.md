@@ -72,6 +72,8 @@ DELETE /api/orders/:id
 
 All order endpoints require `Authorization: Bearer <token>`. `GET /api/health` and `POST /api/auth/login` are public.
 
+`GET /api/orders?page=1&pageSize=100` returns a bounded page and a `pagination` object containing `page`, `pageSize`, `total`, and `totalPages`. `pageSize` is capped at 100. A request without pagination parameters keeps the legacy all-orders response for rolling-deployment compatibility; the current frontend always uses paginated synchronization.
+
 Response shapes:
 
 ```json

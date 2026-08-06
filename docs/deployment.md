@@ -173,6 +173,8 @@ server {
 }
 ```
 
+后端默认只信任来自本机回环地址的反向代理。请保留 `X-Forwarded-For $proxy_add_x_forwarded_for`，登录限流会据此按真实客户端 IP 分开计算；不要把 Node 的 3001 端口直接暴露到公网，也不要把 Express `trust proxy` 改成无条件信任。
+
 检查并重载 Nginx：
 
 ```bash

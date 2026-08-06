@@ -261,8 +261,30 @@ export function saveConfigToApi(config) {
   });
 }
 
-export function fetchOrdersFromApi() {
-  return apiRequest("/orders", {
+export function fetchOrdersFromApi(filters) {
+  var source = filters || {};
+  var params = new URLSearchParams();
+  ["page", "pageSize"].forEach(function (key) {
+    if (source[key] !== "" && source[key] !== null && source[key] !== undefined) {
+      params.set(key, String(source[key]));
+    }
+  });
+  var query = params.toString();
+  return apiRequest("/orders" + (query ? "?" + query : ""), {
+    timeoutMs: ORDER_READ_TIMEOUT_MS
+  });
+}
+
+export function fetchAuditLogsFromApi(filters) {
+  var source = filters || {};
+  var params = new URLSearchParams();
+  ["page", "pageSize", "action", "entityType"].forEach(function (key) {
+    if (source[key] !== "" && source[key] !== null && source[key] !== undefined) {
+      params.set(key, String(source[key]));
+    }
+  });
+  var query = params.toString();
+  return apiRequest("/audit-logs" + (query ? "?" + query : ""), {
     timeoutMs: ORDER_READ_TIMEOUT_MS
   });
 }
